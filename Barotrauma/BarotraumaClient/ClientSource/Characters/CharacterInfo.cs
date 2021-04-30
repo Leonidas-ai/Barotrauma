@@ -100,7 +100,22 @@ namespace Barotrauma
                     Color textColor = Color.White * (0.5f + skill.Level / 200.0f);
 
                     var skillName = new GUITextBlock(new RectTransform(new Vector2(1.0f, 0.0f), skillsArea.RectTransform), TextManager.Get("SkillName." + skill.Identifier), textColor: textColor, font: font) { Padding = Vector4.Zero };
-                    new GUITextBlock(new RectTransform(new Vector2(1.0f, 1.0f), skillName.RectTransform), ((int)skill.Level).ToString(), textColor: textColor, font: font, textAlignment: Alignment.CenterRight);
+
+                    float modifiedSkillLevel = skill.Level;
+                    if (Character != null)
+                    {
+                        modifiedSkillLevel = Character.GetSkillLevel(skill.Identifier);
+                    }
+                    if (!MathUtils.NearlyEqual(MathF.Round(modifiedSkillLevel), MathF.Round(skill.Level)))
+                    {
+                        int skillChange = (int)MathF.Round(modifiedSkillLevel - skill.Level);
+                        string changeText = $"{(skillChange > 0 ? "+" : "") + skillChange}";
+                        new GUITextBlock(new RectTransform(new Vector2(1.0f, 1.0f), skillName.RectTransform), $"{(int)skill.Level} ({changeText})", textColor: textColor, font: font, textAlignment: Alignment.CenterRight);
+                    }
+                    else
+                    {
+                        new GUITextBlock(new RectTransform(new Vector2(1.0f, 1.0f), skillName.RectTransform), ((int)skill.Level).ToString(), textColor: textColor, font: font, textAlignment: Alignment.CenterRight);
+                    }
                 }
             }
             else if (Character != null && Character.IsDead)
@@ -152,34 +167,19 @@ namespace Barotrauma
 
         partial void OnSkillChanged(string skillIdentifier, float prevLevel, float newLevel, Vector2 textPopupPos)
         {
-            if (TeamID == Character.TeamType.FriendlyNPC) { return; }
+            if (TeamID == CharacterTeamType.FriendlyNPC) { return; }
             if (Character.Controlled != null && Character.Controlled.TeamID != TeamID) { return; }
-
-            if (newLevel - prevLevel > 0.1f)
-            {
-                GUI.AddMessage(
-                    "+" + ((int)((newLevel - prevLevel) * 100.0f)).ToString() + " XP",
-                    GUI.Style.Green,
-                    textPopupPos,
-                    Vector2.UnitY * 10.0f,
-                    playSound: false);
-            }
-            else if (prevLevel % 0.1f > 0.05f && newLevel % 0.1f < 0.05f)
-            {
-                GUI.AddMessage(
-                    "+10 XP",
-                    GUI.Style.Green,
-                    textPopupPos,
-                    Vector2.UnitY * 10.0f,
-                    playSound: false);
-            }
 
             if ((int)newLevel > (int)prevLevel)
             {
+                int increase = Math.Max((int)newLevel - (int)prevLevel, 1);
                 GUI.AddMessage(
-                    TextManager.GetWithVariables("SkillIncreased", new string[3] { "[name]", "[skillname]", "[newlevel]" },
-                    new string[3] { Name, TextManager.Get("SkillName." + skillIdentifier), ((int)newLevel).ToString() },
-                    new bool[3] { false, true, false }), GUI.Style.Green);
+                    string.Format("+{0} {1}", increase, TextManager.Get("SkillName." + skillIdentifier)), 
+                    GUI.Style.Green,
+                    textPopupPos,
+                    Vector2.UnitY * 10.0f,
+                    playSound: false,
+                    subId: Character?.Submarine?.ID ?? -1);
             }
         }
 
@@ -544,6 +544,7 @@ namespace Barotrauma
         {
             ushort infoID = inc.ReadUInt16();
             string newName = inc.ReadString();
+            string originalName = inc.ReadString();
             int gender = inc.ReadByte();
             int race = inc.ReadByte();
             int headSpriteID = inc.ReadByte();
@@ -571,7 +572,7 @@ namespace Barotrauma
             }
 
             // TODO: animations
-            CharacterInfo ch = new CharacterInfo(speciesName, newName, jobPrefab, ragdollFile, variant)
+            CharacterInfo ch = new CharacterInfo(speciesName, newName, originalName, jobPrefab, ragdollFile, variant)
             {
                 ID = infoID,
             };

@@ -410,9 +410,9 @@ namespace Barotrauma
                 if (sub.HasTag(SubmarineTag.HideInMenus)) { continue; }
                 string subPath = Path.GetFullPath(sub.FilePath);
 
-                //ignore subs that are part of the vanilla content package
+                //ignore files that are part of the vanilla content package
                 if (GameMain.VanillaContent != null &&
-                    GameMain.VanillaContent.GetFilesOfType(ContentType.Submarine).Any(s => Path.GetFullPath(s) == subPath))
+                    GameMain.VanillaContent.Files.Any(s => Path.GetFullPath(s.Path) == subPath))
                 {
                     continue;
                 }
@@ -682,12 +682,23 @@ namespace Barotrauma
                     try
                     {
                         bool reselect = GameMain.Config.AllEnabledPackages.Any(cp => cp.SteamWorkshopId != 0 && cp.SteamWorkshopId == item?.Id);
-                        if (!SteamManager.UninstallWorkshopItem(item, false, out string errorMsg) ||
-                            !SteamManager.InstallWorkshopItem(item, out errorMsg, reselect, true))
+                        if (!SteamManager.UninstallWorkshopItem(item, false, out string errorMsg))
                         {
                             DebugConsole.ThrowError($"Failed to reinstall \"{item?.Title}\": {errorMsg}", null, true);
                             elem.Flash(GUI.Style.Red);
+                            return true;
                         }
+
+                        SteamManager.ForceRedownload(item?.Id ?? 0, () =>
+                        {
+                            if (!SteamManager.InstallWorkshopItem(item, out string errorMsg, reselect, true))
+                            {
+                                DebugConsole.ThrowError($"Failed to reinstall \"{item?.Title}\": {errorMsg}", null, true);
+                                elem.Flash(GUI.Style.Red);
+                            }
+                            RefreshSubscribedItems();
+                        });
+                        RefreshSubscribedItems();
                     }
                     catch (Exception e)
                     {
@@ -696,6 +707,7 @@ namespace Barotrauma
                     }
                     return true;
                 };
+                reinstallBtn.Enabled = !item.Value.IsDownloading && !item.Value.IsDownloadPending;
                 var unsubBtn = new GUIButton(new RectTransform(new Point((int)(32 * GUI.Scale)), rightColumn.RectTransform), "", style: "GUIMinusButton")
                 {
                     ToolTip = TextManager.Get("WorkshopItemUnsubscribe"),

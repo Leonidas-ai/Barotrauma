@@ -109,38 +109,18 @@ namespace Barotrauma
                 ISpatialEntity spawnPos = GetSpawnPos();
                 Entity.Spawner.AddToSpawnQueue(CharacterPrefab.HumanSpeciesName, OffsetSpawnPos(spawnPos?.WorldPosition ?? Vector2.Zero, 100.0f), onSpawn: newCharacter =>
                 {
-                    newCharacter.TeamID = Character.TeamType.FriendlyNPC;
+                    newCharacter.TeamID = CharacterTeamType.FriendlyNPC;
                     newCharacter.EnableDespawn = false;
                     humanPrefab.GiveItems(newCharacter, newCharacter.Submarine);
                     if (LootingIsStealing)
                     {
-                        foreach (Item item in newCharacter.Inventory.Items)
+                        foreach (Item item in newCharacter.Inventory.AllItems)
                         {
-                            if (item != null) { item.SpawnedInOutpost = true; }
+                            item.SpawnedInOutpost = true;
+                            item.AllowStealing = false;
                         }
                     }
-                    newCharacter.CharacterHealth.MaxVitality *= humanPrefab.HealthMultiplier;
-                    var humanAI = newCharacter.AIController as HumanAIController;
-                    if (humanAI != null) 
-                    { 
-                        var idleObjective = humanAI.ObjectiveManager.GetObjective<AIObjectiveIdle>();
-                        if (idleObjective != null)
-                        {
-                            idleObjective.Behavior = humanPrefab.Behavior;
-                            foreach (string moduleType in humanPrefab.PreferredOutpostModuleTypes)
-                            {
-                                idleObjective.PreferredOutpostModuleTypes.Add(moduleType); 
-                            }
-                        }
-                    }
-                    if (humanPrefab.CampaignInteractionType != CampaignMode.InteractionType.None)
-                    {
-                        (GameMain.GameSession.GameMode as CampaignMode)?.AssignNPCMenuInteraction(newCharacter, humanPrefab.CampaignInteractionType);
-                        if (spawnPos != null && humanAI != null)
-                        {
-                            humanAI.ObjectiveManager.SetOrder(new AIObjectiveGoTo(spawnPos, newCharacter, humanAI.ObjectiveManager, repeat: true, getDivingGearIfNeeded: false, closeEnough: 200));
-                        }
-                    }
+                    humanPrefab.InitializeCharacter(newCharacter, spawnPos);
                     if (!string.IsNullOrEmpty(TargetTag) && newCharacter != null)
                     {
                         ParentEvent.AddTarget(TargetTag, newCharacter);
@@ -200,12 +180,18 @@ namespace Barotrauma
                     }
                     void onSpawned(Item newItem)
                     {
-                        if (!string.IsNullOrEmpty(TargetTag) && newItem != null)
+                        if (newItem != null)
                         {
-                            ParentEvent.AddTarget(TargetTag, newItem);
+                            if (!string.IsNullOrEmpty(TargetTag))
+                            {
+                                ParentEvent.AddTarget(TargetTag, newItem);
+                            }
+                            if (IgnoreByAI)
+                            {
+                                newItem.AddTag("ignorebyai");
+                            }
                         }
                         spawnedEntity = newItem;
-                        newItem?.SetIgnoreByAI(IgnoreByAI);
                     }
                 }
             }
@@ -255,7 +241,7 @@ namespace Barotrauma
             return GetSpawnPos(SpawnLocation, spawnPointType, targetModuleTags, SpawnPointTag.ToEnumerable());
         }
 
-        public static WayPoint GetSpawnPos(SpawnLocationType spawnLocation, SpawnType? spawnPointType, IEnumerable<string> moduleFlags = null, IEnumerable<string> spawnpointTags = null)
+        public static WayPoint GetSpawnPos(SpawnLocationType spawnLocation, SpawnType? spawnPointType, IEnumerable<string> moduleFlags = null, IEnumerable<string> spawnpointTags = null, bool asFarAsPossibleFromAirlock = false)
         {
             List<WayPoint> potentialSpawnPoints = spawnLocation switch
             {
@@ -269,6 +255,7 @@ namespace Barotrauma
 
             potentialSpawnPoints = potentialSpawnPoints.FindAll(wp => wp.ConnectedDoor == null && wp.Ladders == null && !wp.isObstructed);
 
+            var airlockSpawnPoints = potentialSpawnPoints.Where(wp => wp.CurrentHull?.OutpostModuleTags?.Contains("airlock") ?? false).ToList();
             if (moduleFlags != null && moduleFlags.Any())
             {
                 List<WayPoint> spawnPoints = potentialSpawnPoints.Where(wp => wp.CurrentHull?.OutpostModuleTags?.Any(moduleFlags.Contains) ?? false).ToList();
@@ -297,7 +284,7 @@ namespace Barotrauma
             IEnumerable<WayPoint> validSpawnPoints;
             if (spawnPointType.HasValue)
             {
-                validSpawnPoints = potentialSpawnPoints.FindAll(wp => wp.SpawnType == spawnPointType.Value);
+                validSpawnPoints = potentialSpawnPoints.FindAll(wp => spawnPointType.Value.HasFlag(wp.SpawnType));
             }
             else
             {
@@ -306,7 +293,6 @@ namespace Barotrauma
             }
 
             //don't spawn in an airlock module if there are other options
-            var airlockSpawnPoints = validSpawnPoints.Where(wp => wp.CurrentHull?.OutpostModuleTags?.Contains("airlock") ?? false);
             if (airlockSpawnPoints.Count() < validSpawnPoints.Count())
             {
                 validSpawnPoints = validSpawnPoints.Except(airlockSpawnPoints);
@@ -316,6 +302,12 @@ namespace Barotrauma
             {
                 DebugConsole.ThrowError($"Could not find a spawn point of the correct type for a SpawnAction (spawn location: {spawnLocation}, type: {spawnPointType}, module flags: {((moduleFlags == null || !moduleFlags.Any()) ? "none" : string.Join(", ", moduleFlags))})");
                 return potentialSpawnPoints.GetRandom();
+            }
+
+            //avoid using waypoints if there's any actual spawnpoints available
+            if (validSpawnPoints.Any(wp => wp.SpawnType != SpawnType.Path))
+            {
+                validSpawnPoints = validSpawnPoints.Where(wp => wp.SpawnType != SpawnType.Path);
             }
 
             //if not trying to spawn at a tagged spawnpoint, favor spawnpoints without tags
@@ -328,7 +320,25 @@ namespace Barotrauma
                 }
             }
 
-            return validSpawnPoints.GetRandom();
+            if (asFarAsPossibleFromAirlock && airlockSpawnPoints.Any())
+            {
+                WayPoint furthestPoint = validSpawnPoints.First();
+                float furthestDist = 0.0f;
+                foreach (WayPoint waypoint in validSpawnPoints)
+                {
+                    float dist = Vector2.DistanceSquared(waypoint.WorldPosition, airlockSpawnPoints.First().WorldPosition);
+                    if (dist > furthestDist)
+                    {
+                        furthestDist = dist;
+                        furthestPoint = waypoint;
+                    }
+                }
+                return furthestPoint;
+            }
+            else
+            {
+                return validSpawnPoints.GetRandom();
+            }
         }
 
         public override string ToDebugString()

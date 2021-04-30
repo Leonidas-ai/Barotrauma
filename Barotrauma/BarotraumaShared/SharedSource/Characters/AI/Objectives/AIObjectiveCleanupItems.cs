@@ -2,6 +2,7 @@
 using Barotrauma.Items.Components;
 using System.Collections.Generic;
 using System.Linq;
+using System;
 
 namespace Barotrauma
 {
@@ -12,15 +13,38 @@ namespace Barotrauma
         public override bool AllowAutomaticItemUnequipping => false;
         public override bool ForceOrderPriority => false;
 
-        public readonly Item prioritizedItem;
+        public readonly List<Item> prioritizedItems = new List<Item>();
 
-        public AIObjectiveCleanupItems(Character character, AIObjectiveManager objectiveManager, float priorityModifier = 1, Item prioritizedItem = null)
+        public AIObjectiveCleanupItems(Character character, AIObjectiveManager objectiveManager, Item prioritizedItem = null, float priorityModifier = 1)
             : base(character, objectiveManager, priorityModifier)
         {
-            this.prioritizedItem = prioritizedItem;
+            if (prioritizedItem != null)
+            {
+                prioritizedItems.Add(prioritizedItem);
+            }
         }
 
-        protected override float TargetEvaluation() => Targets.Any() ? AIObjectiveManager.RunPriority - 1 : 0;
+        public AIObjectiveCleanupItems(Character character, AIObjectiveManager objectiveManager, IEnumerable<Item> prioritizedItems, float priorityModifier = 1)
+            : base(character, objectiveManager, priorityModifier)
+        {
+            this.prioritizedItems.AddRange(prioritizedItems.Where(i => i != null));
+        }
+
+        protected override float TargetEvaluation()
+        {
+            if (Targets.None()) { return 0; }
+            if (objectiveManager.IsOrder(this))
+            {
+                float prio = objectiveManager.GetOrderPriority(this);
+                if (subObjectives.All(so => so.SubObjectives.None()))
+                {
+                    // If none of the subobjectives have subobjectives, no valid container was found. In this case, let's reduce the priority below the run threshold.
+                    prio = Math.Min(prio, AIObjectiveManager.RunPriority - 1);
+                }
+                return prio;
+            }
+            return AIObjectiveManager.RunPriority - 0.5f;
+        }
 
         protected override bool Filter(Item target)
         {
@@ -38,7 +62,7 @@ namespace Barotrauma
         protected override AIObjective ObjectiveConstructor(Item item)
             => new AIObjectiveCleanupItem(item, character, objectiveManager, priorityModifier: PriorityModifier)
             {
-                IsPriority = prioritizedItem == item
+                IsPriority = prioritizedItems.Contains(item)
             };
 
         protected override void OnObjectiveCompleted(AIObjective objective, Item target)
@@ -56,12 +80,19 @@ namespace Barotrauma
             return true;
         }
 
-        public static bool IsValidTarget(Item item, Character character, bool checkInventory)
+        public static bool IsValidContainer(Item item, Character character, bool allowUnloading = true) =>
+            !item.IgnoreByAI && item.IsInteractable(character) && item.HasTag("allowcleanup") && allowUnloading && item.ParentInventory == null && item.OwnInventory != null && item.OwnInventory.AllItems.Any() && IsItemInsideValidSubmarine(item, character);
+
+        public static bool IsValidTarget(Item item, Character character, bool checkInventory, bool allowUnloading = true)
         {
             if (item == null) { return false; }
             if (item.IgnoreByAI) { return false; }
-            if (item.NonInteractable) { return false; }
-            if (item.ParentInventory != null) { return false; }
+            if (!item.IsInteractable(character)) { return false; }
+            if (item.SpawnedInOutpost) { return false; }
+            if (item.ParentInventory != null)
+            {
+                if (item.Container == null || !IsValidContainer(item.Container, character, allowUnloading)) { return false; }
+            }
             if (character != null && !IsItemInsideValidSubmarine(item, character)) { return false; }
             var pickable = item.GetComponent<Pickable>();
             if (pickable == null) { return false; }
@@ -96,22 +127,32 @@ namespace Barotrauma
                 {
                     foreach (var slotType in inv.SlotTypes)
                     {
-                        if (allowedSlot.HasFlag(slotType))
+                        if (!allowedSlot.HasFlag(slotType)) { continue; }                        
+                        for (int i = 0; i < inv.Capacity; i++)
                         {
-                            for (int i = 0; i < inv.Capacity; i++)
+                            canEquip = true;
+                            if (allowedSlot.HasFlag(inv.SlotTypes[i]) && inv.GetItemAt(i) != null)
                             {
-                                canEquip = true;
-                                if (allowedSlot.HasFlag(inv.SlotTypes[i]) && inv.Items[i] != null)
-                                {
-                                    canEquip = false;
-                                    break;
-                                }
+                                canEquip = false;
+                                break;
                             }
-                        }
+                        }                        
                     }
                 }
             }
             return canEquip;
+        }
+
+        public override void OnDeselected()
+        {
+            base.OnDeselected();
+            foreach (var subObjective in SubObjectives)
+            {
+                if (subObjective is AIObjectiveCleanupItem cleanUpObjective)
+                {
+                    cleanUpObjective.DropTarget();
+                }
+            }
         }
     }
 }

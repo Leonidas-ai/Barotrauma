@@ -351,7 +351,7 @@ namespace Barotrauma.Items.Components
                             float characterSkillLevel = CurrentFixer.GetSkillLevel(skill.Identifier);
                             CurrentFixer.Info.IncreaseSkillLevel(skill.Identifier,
                                 SkillSettings.Current.SkillIncreasePerRepair / Math.Max(characterSkillLevel, 1.0f),
-                                CurrentFixer.WorldPosition + Vector2.UnitY * 100.0f);
+                                CurrentFixer.Position + Vector2.UnitY * 100.0f);
                         }
                         SteamAchievementManager.OnItemRepaired(item, CurrentFixer);
                     }
@@ -381,7 +381,7 @@ namespace Barotrauma.Items.Components
                             float characterSkillLevel = CurrentFixer.GetSkillLevel(skill.Identifier);
                             CurrentFixer.Info.IncreaseSkillLevel(skill.Identifier,
                                 SkillSettings.Current.SkillIncreasePerSabotage / Math.Max(characterSkillLevel, 1.0f),
-                                CurrentFixer.WorldPosition + Vector2.UnitY * 100.0f);
+                                CurrentFixer.Position + Vector2.UnitY * 100.0f);
                         }
 
                         deteriorationTimer = 0.0f;
@@ -481,7 +481,7 @@ namespace Barotrauma.Items.Components
             character.AnimController.UpdateUseItem(false, item.WorldPosition + new Vector2(0.0f, 100.0f) * ((item.Condition / item.MaxCondition) % 0.1f));
         }
 
-        public override void ReceiveSignal(int stepsTaken, string signal, Connection connection, Item source, Character sender, float power = 0, float signalStrength = 1)
+        public override void ReceiveSignal(Signal signal, Connection connection)
         {
             //do nothing
             //Repairables should always stay active, so we don't want to use the default behavior 

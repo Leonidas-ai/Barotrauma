@@ -39,6 +39,8 @@ namespace Barotrauma.Items.Components
 
         private Pair<Rectangle, string> tooltip;
 
+        private GUITextBlock requiredTimeBlock;
+
         partial void InitProjSpecific()
         {
             CreateGUI();
@@ -190,12 +192,27 @@ namespace Barotrauma.Items.Components
                             };
                         }
 
-                        new GUITextBlock(new RectTransform(new Vector2(0.85f, 1f), container.RectTransform), fi.DisplayName)
+                        new GUITextBlock(new RectTransform(new Vector2(0.85f, 1f), container.RectTransform), GetRecipeNameAndAmount(fi))
                         {
                             Padding = Vector4.Zero,
                             AutoScaleVertical = true,
                             ToolTip = fi.TargetItem.Description
                         };
+            }
+        }
+
+        private string GetRecipeNameAndAmount(FabricationRecipe fabricationRecipe)
+        {
+            if (fabricationRecipe == null) { return ""; }
+            if (fabricationRecipe.Amount > 1)
+            {
+                return TextManager.GetWithVariables("fabricationrecipenamewithamount",
+                    new string[2] { "[name]", "[amount]" },
+                    new string[2] { fabricationRecipe.DisplayName, fabricationRecipe.Amount.ToString() });
+            }
+            else
+            {
+                return fabricationRecipe.DisplayName;
             }
         }
 
@@ -212,11 +229,11 @@ namespace Barotrauma.Items.Components
             // TODO, This works fine as of now but if GUI.PreventElementOverlap ever gets fixed this block of code may become obsolete or detrimental.
             // Only do this if there's only one linked component. If you link more containers then may
             // GUI.PreventElementOverlap have mercy on your HUD layout
-            if (GuiFrame != null && item.linkedTo.Count(entity => entity is Item item && item.DisplaySideBySideWhenLinked) == 1)
+            if (GuiFrame != null && item.linkedTo.Count(entity => entity is Item { DisplaySideBySideWhenLinked: true }) == 1)
             {
                 foreach (MapEntity linkedTo in item.linkedTo)
                 {
-                    if (!(linkedTo is Item linkedItem) || !linkedItem.DisplaySideBySideWhenLinked) { continue; }
+                    if (!(linkedTo is Item { DisplaySideBySideWhenLinked: true } linkedItem)) { continue; }
                     if (!linkedItem.Components.Any()) { continue; }
 
                     var itemContainer = linkedItem.GetComponent<ItemContainer>();
@@ -225,8 +242,8 @@ namespace Barotrauma.Items.Components
                     // how much spacing do we want between the components
                     var padding = (int) (8 * GUI.Scale);
                     // Move the linked container to the right and move the fabricator to the left
-                    itemContainer.GuiFrame.RectTransform.AbsoluteOffset = new Point(-100, 0);
-                    GuiFrame.RectTransform.AbsoluteOffset = new Point(100, 0);
+                    itemContainer.GuiFrame.RectTransform.AbsoluteOffset = new Point(GuiFrame.Rect.Width / -2 - padding, 0);
+                    GuiFrame.RectTransform.AbsoluteOffset = new Point(itemContainer.GuiFrame.Rect.Width / 2 + padding, 0);
                 }
             }
             
@@ -287,9 +304,8 @@ namespace Barotrauma.Items.Components
                         missingItems.Add(requiredItem);
                     }
                 }
-                foreach (Item item in inputContainer.Inventory.Items)
+                foreach (Item item in inputContainer.Inventory.AllItems)
                 {
-                    if (item == null) { continue; }
                     missingItems.Remove(missingItems.FirstOrDefault(mi => mi.ItemPrefabs.Contains(item.prefab)));
                 }
 
@@ -297,7 +313,7 @@ namespace Barotrauma.Items.Components
 
                 foreach (FabricationRecipe.RequiredItem requiredItem in missingItems)
                 {
-                    while (slotIndex < inputContainer.Capacity && inputContainer.Inventory.Items[slotIndex] != null)
+                    while (slotIndex < inputContainer.Capacity && inputContainer.Inventory.GetItemAt(slotIndex) != null)
                     {
                         slotIndex++;
                     }
@@ -307,17 +323,17 @@ namespace Barotrauma.Items.Components
                     {
                         if (item.ParentInventory != inputContainer.Inventory && IsItemValidIngredient(item, requiredItem))
                         {
-                            int availableSlotIndex = Array.IndexOf(item.ParentInventory.Items, item);
+                            int availableSlotIndex = item.ParentInventory.FindIndex(item);
                             //slots are null if the inventory has never been displayed 
                             //(linked item, but the UI is not set to be displayed at the same time)
-                            if (item.ParentInventory.slots != null)
+                            if (item.ParentInventory.visualSlots != null)
                             {
-                                if (item.ParentInventory.slots[availableSlotIndex].HighlightTimer <= 0.0f)
+                                if (item.ParentInventory.visualSlots[availableSlotIndex].HighlightTimer <= 0.0f)
                                 {
-                                    item.ParentInventory.slots[availableSlotIndex].ShowBorderHighlight(GUI.Style.Green, 0.5f, 0.5f, 0.2f);
+                                    item.ParentInventory.visualSlots[availableSlotIndex].ShowBorderHighlight(GUI.Style.Green, 0.5f, 0.5f, 0.2f);
                                     if (slotIndex < inputContainer.Capacity)
                                     {
-                                        inputContainer.Inventory.slots[slotIndex].ShowBorderHighlight(GUI.Style.Green, 0.5f, 0.5f, 0.2f);
+                                        inputContainer.Inventory.visualSlots[slotIndex].ShowBorderHighlight(GUI.Style.Green, 0.5f, 0.5f, 0.2f);
                                     }
                                 }
                             }
@@ -327,7 +343,7 @@ namespace Barotrauma.Items.Components
                     if (slotIndex >= inputContainer.Capacity) { break; }
                     
                     var itemIcon = requiredItem.ItemPrefabs.First().InventoryIcon ?? requiredItem.ItemPrefabs.First().sprite;
-                    Rectangle slotRect = inputContainer.Inventory.slots[slotIndex].Rect;
+                    Rectangle slotRect = inputContainer.Inventory.visualSlots[slotIndex].Rect;
                     itemIcon.Draw(
                         spriteBatch,
                         slotRect.Center.ToVector2(),
@@ -367,14 +383,10 @@ namespace Barotrauma.Items.Components
         {
             overlayComponent.RectTransform.SetAsLastChild();
 
-            if (outputContainer.Inventory.Items.First() != null) { return; }
-            
             FabricationRecipe targetItem = fabricatedItem ?? selectedItem;
             if (targetItem != null)
             {
-                var itemIcon = targetItem.TargetItem.InventoryIcon ?? targetItem.TargetItem.sprite;
-
-                Rectangle slotRect = outputContainer.Inventory.slots[0].Rect;
+                Rectangle slotRect = outputContainer.Inventory.visualSlots[0].Rect;
 
                 if (fabricatedItem != null)
                 {
@@ -386,11 +398,15 @@ namespace Barotrauma.Items.Components
                         GUI.Style.Green * 0.5f, isFilled: true);
                 }
 
-                itemIcon.Draw(
-                    spriteBatch,
-                    slotRect.Center.ToVector2(),
-                    color: targetItem.TargetItem.InventoryIconColor * 0.4f,
-                    scale: Math.Min(slotRect.Width / itemIcon.size.X, slotRect.Height / itemIcon.size.Y) * 0.9f);
+                if (outputContainer.Inventory.IsEmpty())
+                {
+                    var itemIcon = targetItem.TargetItem.InventoryIcon ?? targetItem.TargetItem.sprite;
+                    itemIcon.Draw(
+                        spriteBatch,
+                        slotRect.Center.ToVector2(),
+                        color: targetItem.TargetItem.InventoryIconColor * 0.4f,
+                        scale: Math.Min(slotRect.Width / itemIcon.size.X, slotRect.Height / itemIcon.size.Y) * 0.9f);
+                }
             }
             
             if (tooltip != null)
@@ -449,8 +465,10 @@ namespace Barotrauma.Items.Components
                     Color = selectedItem.TargetItem.InventoryIconColor
                 };
             }*/
+
+
             var nameBlock = new GUITextBlock(new RectTransform(new Vector2(1.0f, 0.0f), paddedFrame.RectTransform),
-                selectedItem.TargetItem.Name, textAlignment: Alignment.CenterLeft, textColor: Color.Aqua, font: GUI.SubHeadingFont)
+                GetRecipeNameAndAmount(selectedItem), textAlignment: Alignment.CenterLeft, textColor: Color.Aqua, font: GUI.SubHeadingFont)
             {
                 AutoScaleHorizontal = true
             };
@@ -508,7 +526,7 @@ namespace Barotrauma.Items.Components
                 AutoScaleHorizontal = true,
             };
                 
-            new GUITextBlock(new RectTransform(new Vector2(1.0f, 0.0f), paddedReqFrame.RectTransform), ToolBox.SecondsToReadableTime(requiredTime), 
+            requiredTimeBlock = new GUITextBlock(new RectTransform(new Vector2(1.0f, 0.0f), paddedReqFrame.RectTransform), ToolBox.SecondsToReadableTime(requiredTime), 
                 font: GUI.SmallFont);
             return true;
         }
@@ -539,7 +557,7 @@ namespace Barotrauma.Items.Components
         private bool StartButtonClicked(GUIButton button, object obj)
         {
             if (selectedItem == null) { return false; }
-            if (!outputContainer.Inventory.IsEmpty())
+            if (fabricatedItem == null && !outputContainer.Inventory.CanBePut(selectedItem.TargetItem))
             {
                 outputSlot.Flash(GUI.Style.Red);
                 return false;
@@ -590,6 +608,12 @@ namespace Barotrauma.Items.Components
                     childContainer.GetChild<GUIImage>().Color = itemPrefab.TargetItem.InventoryIconColor * (canBeFabricated ? 1.0f : 0.5f);
                 }
             }
+        }
+
+        partial void UpdateRequiredTimeProjSpecific()
+        {
+            if (requiredTimeBlock == null) { return; }
+            requiredTimeBlock.Text = ToolBox.SecondsToReadableTime(timeUntilReady > 0.0f ? timeUntilReady : requiredTime);
         }
 
         public void ClientWrite(IWriteMessage msg, object[] extraData = null)

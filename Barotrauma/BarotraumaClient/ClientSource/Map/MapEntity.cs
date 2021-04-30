@@ -20,9 +20,6 @@ namespace Barotrauma
         
         public static Vector2 StartMovingPos => startMovingPos;
 
-        // Quick undo/redo for size and movement only. TODO: Remove if we do a more general implementation.
-        private Memento<Rectangle> rectMemento;
-
         public event Action<Rectangle> Resized;
 
         private static bool resizing;
@@ -64,8 +61,6 @@ namespace Barotrauma
                 return editingHUD;
             }
         }
-
-        //protected bool isSelected;
 
         private static bool disableSelect;
         public static bool DisableSelect
@@ -214,7 +209,7 @@ namespace Barotrauma
                     }
                     else if (PlayerInput.KeyHit(Keys.V))
                     {
-                        Paste(cam.WorldViewCenter);
+                        Paste(cam.ScreenToWorld(PlayerInput.MousePosition));
                     }
                     else if (PlayerInput.KeyHit(Keys.G))
                     {
@@ -279,31 +274,10 @@ namespace Barotrauma
 
             if (GUI.KeyboardDispatcher.Subscriber == null)
             {
-                int up = PlayerInput.KeyDown(Keys.Up) ? 1 : 0,
-                    down = PlayerInput.KeyDown(Keys.Down) ? -1 : 0,
-                    left = PlayerInput.KeyDown(Keys.Left) ? -1 : 0,
-                    right = PlayerInput.KeyDown(Keys.Right) ? 1 : 0;
-
-                int xKeysDown = (left + right);
-                int yKeysDown = (up + down);
-                
-                if (xKeysDown != 0 || yKeysDown != 0) { keyDelay += (float) Timing.Step; } else { keyDelay = 0; }
-                
-                Vector2 nudgeAmount = Vector2.Zero;
-
-                if (keyDelay >= 0.5f)
+                Vector2 nudge = GetNudgeAmount();
+                if (nudge != Vector2.Zero)
                 {
-                    nudgeAmount.Y = yKeysDown;
-                    nudgeAmount.X = xKeysDown;
-                }
-                
-                if (PlayerInput.KeyHit(Keys.Up))    nudgeAmount.Y =  1f;
-                if (PlayerInput.KeyHit(Keys.Down))  nudgeAmount.Y = -1f;
-                if (PlayerInput.KeyHit(Keys.Left))  nudgeAmount.X = -1f;
-                if (PlayerInput.KeyHit(Keys.Right)) nudgeAmount.X =  1f;
-                if (nudgeAmount != Vector2.Zero)
-                {
-                    foreach (MapEntity entityToNudge in selectedList) { entityToNudge.Move(nudgeAmount); }
+                    foreach (MapEntity entityToNudge in selectedList) { entityToNudge.Move(nudge); }
                 }
             }
             else
@@ -476,6 +450,8 @@ namespace Barotrauma
             {
                 if (PlayerInput.PrimaryMouseButtonHeld() &&
                     PlayerInput.KeyUp(Keys.Space) &&
+                    PlayerInput.KeyUp(Keys.LeftAlt) && 
+                    PlayerInput.KeyUp(Keys.RightAlt) && 
                     (highlightedListBox == null || (GUI.MouseOn != highlightedListBox && !highlightedListBox.IsParentOf(GUI.MouseOn))))
                 {
                     //if clicking a selected entity, start moving it
@@ -489,6 +465,37 @@ namespace Barotrauma
                     Screen.Selected.Cam.StopMovement();
                 }
             }
+        }
+
+        public static Vector2 GetNudgeAmount(bool doHold = true)
+        {
+            Vector2 nudgeAmount = Vector2.Zero;
+            if (doHold)
+            {
+                int up = PlayerInput.KeyDown(Keys.Up) ? 1 : 0,
+                    down = PlayerInput.KeyDown(Keys.Down) ? -1 : 0,
+                    left = PlayerInput.KeyDown(Keys.Left) ? -1 : 0,
+                    right = PlayerInput.KeyDown(Keys.Right) ? 1 : 0;
+
+                int xKeysDown = (left + right);
+                int yKeysDown = (up + down);
+                
+                if (xKeysDown != 0 || yKeysDown != 0) { keyDelay += (float) Timing.Step; } else { keyDelay = 0; }
+
+
+                if (keyDelay >= 0.5f)
+                {
+                    nudgeAmount.Y = yKeysDown;
+                    nudgeAmount.X = xKeysDown;
+                }
+            }
+
+            if (PlayerInput.KeyHit(Keys.Up))    nudgeAmount.Y =  1f;
+            if (PlayerInput.KeyHit(Keys.Down))  nudgeAmount.Y = -1f;
+            if (PlayerInput.KeyHit(Keys.Left))  nudgeAmount.X = -1f;
+            if (PlayerInput.KeyHit(Keys.Right)) nudgeAmount.X =  1f;
+
+            return nudgeAmount;
         }
 
         public MapEntity GetReplacementOrThis()
@@ -511,7 +518,7 @@ namespace Barotrauma
                 {
                     if (entities == null)
                     {
-                        if (potentialContainer.OwnInventory != null && potentialContainer.ParentInventory == null && !potentialContainer.OwnInventory.IsFull())
+                        if (potentialContainer.OwnInventory != null && potentialContainer.ParentInventory == null && !potentialContainer.OwnInventory.IsFull(takeStacksIntoAccount: true))
                         {
                             targetContainer = potentialContainer;
                             break;
@@ -793,7 +800,7 @@ namespace Barotrauma
             }
             if (selectionPos != null && selectionPos != Vector2.Zero)
             {
-                GUI.DrawRectangle(spriteBatch, new Vector2(selectionPos.X, -selectionPos.Y), selectionSize, Color.DarkRed, false, 0, (int)Math.Max(1.5f / GameScreen.Selected.Cam.Zoom, 1.0f));
+                GUI.DrawRectangle(spriteBatch, new Vector2(selectionPos.X, -selectionPos.Y), selectionSize, Color.DarkRed, false, 0, 2f / GameScreen.Selected.Cam.Zoom);
             }
         }
 

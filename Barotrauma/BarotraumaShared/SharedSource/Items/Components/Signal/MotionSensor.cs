@@ -15,17 +15,24 @@ namespace Barotrauma.Items.Components
 
         private float updateTimer;
 
+        public enum TargetType
+        {
+            Any,
+            Human,
+            Monster
+        }
+
         [Serialize(false, false, description: "Has the item currently detected movement. Intended to be used by StatusEffect conditionals (setting this value in XML has no effect).")]
         public bool MotionDetected { get; set; }
 
-        [Editable, Serialize(false, true, description: "Should the sensor only detect the movement of humans?", alwaysUseInstanceValues: true)]
-        public bool OnlyHumans
+        [InGameEditable, Serialize(TargetType.Any, true, description: "Which kind of targets can trigger the sensor?", alwaysUseInstanceValues: true)]
+        public TargetType Target
         {
             get;
             set;
         }
 
-        [Editable, Serialize(false, true, description: "Should the sensor ignore the bodies of dead characters?", alwaysUseInstanceValues: true)]
+        [InGameEditable, Serialize(false, true, description: "Should the sensor ignore the bodies of dead characters?", alwaysUseInstanceValues: true)]
         public bool IgnoreDead
         {
             get;
@@ -55,7 +62,7 @@ namespace Barotrauma.Items.Components
             }
         }
 
-        [Editable, Serialize("0,0", true, description: "The position to detect the movement at relative to the item. For example, 0,100 would detect movement 100 units above the item.")]
+        [InGameEditable, Serialize("0,0", true, description: "The position to detect the movement at relative to the item. For example, 0,100 would detect movement 100 units above the item.")]
         public Vector2 DetectOffset
         {
             get { return detectOffset; }
@@ -67,11 +74,48 @@ namespace Barotrauma.Items.Components
             }
         }
 
-        [InGameEditable, Serialize("1", true, description: "The signal the item outputs when it has detected movement.", alwaysUseInstanceValues: true)]
-        public string Output { get; set; }
+        private int maxOutputLength;
+        [Editable, Serialize(200, false, description: "The maximum length of the output strings. Warning: Large values can lead to large memory usage or networking issues.")]
+        public int MaxOutputLength
+        {
+            get { return maxOutputLength; }
+            set
+            {
+                maxOutputLength = Math.Max(value, 0);
+            }
+        }
 
+        private string output;
+        [InGameEditable, Serialize("1", true, description: "The signal the item outputs when it has detected movement.", alwaysUseInstanceValues: true)]
+        public string Output
+        {
+            get { return output; }
+            set
+            {
+                if (value == null) { return; }
+                output = value;
+                if (output.Length > MaxOutputLength && (item.Submarine == null || !item.Submarine.Loading))
+                {
+                    output = output.Substring(0, MaxOutputLength);
+                }
+            }
+        }
+
+        private string falseOutput;
         [InGameEditable, Serialize("", true, description: "The signal the item outputs when it has not detected movement.", alwaysUseInstanceValues: true)]
-        public string FalseOutput { get; set; }
+        public string FalseOutput
+        {
+            get { return falseOutput; }
+            set
+            {
+                if (value == null) { return; }
+                falseOutput = value;
+                if (falseOutput.Length > MaxOutputLength && (item.Submarine == null || !item.Submarine.Loading))
+                {
+                    falseOutput = falseOutput.Substring(0, MaxOutputLength);
+                }
+            }
+        }
 
         [Editable(DecimalCount = 3), Serialize(0.01f, true, description: "How fast the objects within the detector's range have to be moving (in m/s).", alwaysUseInstanceValues: true)]
         public float MinimumVelocity
@@ -79,7 +123,6 @@ namespace Barotrauma.Items.Components
             get;
             set;
         }
-
 
         public MotionSensor(Item item, XElement element)
             : base(item, element)
@@ -93,11 +136,21 @@ namespace Barotrauma.Items.Components
             }
         }
 
+        public override void Load(XElement componentElement, bool usePrefabValues, IdRemap idRemap)
+        {
+            base.Load(componentElement, usePrefabValues, idRemap);
+            //backwards compatibility
+            if (componentElement.GetAttributeBool("onlyhumans", false))
+            {
+                Target = TargetType.Human;
+            }
+        }
+
         public override void Update(float deltaTime, Camera cam)
         {
             string signalOut = MotionDetected ? Output : FalseOutput;
 
-            if (!string.IsNullOrEmpty(signalOut)) item.SendSignal(1, signalOut, "state_out", null);
+            if (!string.IsNullOrEmpty(signalOut)) { item.SendSignal(new Signal(signalOut, 1), "state_out"); }
 
             updateTimer -= deltaTime;
             if (updateTimer > 0.0f) return;
@@ -121,7 +174,20 @@ namespace Barotrauma.Items.Components
             foreach (Character c in Character.CharacterList)
             {
                 if (IgnoreDead && c.IsDead) { continue; }
-                if (OnlyHumans && !c.IsHuman) { continue; }
+
+                //ignore characters that have spawned a second or less ago
+                //makes it possible to detect when a spawned character moves without triggering the detector immediately as the ragdoll spawns and drops to the ground
+                if (c.SpawnTime > Timing.TotalTime - 1.0) { continue; }
+
+                switch (Target)
+                {
+                    case TargetType.Human:
+                        if (!c.IsHuman) { continue; }
+                        break;
+                    case TargetType.Monster:
+                        if (c.IsHuman || c.IsPet) { continue; }
+                        break;
+                }
 
                 //do a rough check based on the position of the character's collider first
                 //before the more accurate limb-based check

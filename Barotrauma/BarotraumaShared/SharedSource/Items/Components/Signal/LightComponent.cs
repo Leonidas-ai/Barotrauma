@@ -25,6 +25,8 @@ namespace Barotrauma.Items.Components
 
         public PhysicsBody ParentBody;
 
+        private Turret turret;
+
         [Serialize(100.0f, true, description: "The range of the emitted light. Higher values are more performance-intensive.", alwaysUseInstanceValues: true),
             Editable(MinValueFloat = 0.0f, MaxValueFloat = 2048.0f)]
         public float Range
@@ -214,7 +216,14 @@ namespace Barotrauma.Items.Components
             IsActive = IsOn;
             item.AddTag("light");
         }
-        
+
+        public override void OnItemLoaded()
+        {
+            base.OnItemLoaded();
+            SetLightSourceState(IsActive, lightBrightness);
+            turret = item.GetComponent<Turret>();
+        }
+
         public override void Update(float deltaTime, Camera cam)
         {
             if (item.AiTarget != null)
@@ -232,9 +241,19 @@ namespace Barotrauma.Items.Components
                 return;
             }
 #if CLIENT
-            light.Position = ParentBody != null ? ParentBody.Position : item.Position;
+            if (ParentBody != null)
+            {
+                light.Position = ParentBody.Position;
+            }
+            else if (turret != null)
+            {
+                light.Position = new Vector2(item.Rect.X + turret.TransformedBarrelPos.X, item.Rect.Y - turret.TransformedBarrelPos.Y);
+            }
+            else
+            {
+                light.Position = item.Position;
+            }
 #endif
-
             PhysicsBody body = ParentBody ?? item.body;
             if (body != null)
             {
@@ -289,12 +308,12 @@ namespace Barotrauma.Items.Components
 
         partial void OnStateChanged();
 
-        public override void ReceiveSignal(int stepsTaken, string signal, Connection connection, Item source, Character sender, float power = 0.0f, float signalStrength = 1.0f)
+        public override void ReceiveSignal(Signal signal, Connection connection)
         {
             switch (connection.Name)
             {
                 case "toggle":
-                    if (signal != "0")
+                    if (signal.value != "0")
                     {
                         if (!IgnoreContinuousToggle || lastToggleSignalTime < Timing.TotalTime - 0.1)
                         {
@@ -304,10 +323,10 @@ namespace Barotrauma.Items.Components
                     }
                     break;
                 case "set_state":
-                    IsOn = signal != "0";
+                    IsOn = signal.value != "0";
                     break;
                 case "set_color":
-                    LightColor = XMLExtensions.ParseColor(signal, false);
+                    LightColor = XMLExtensions.ParseColor(signal.value, false);
                     break;
             }
         }

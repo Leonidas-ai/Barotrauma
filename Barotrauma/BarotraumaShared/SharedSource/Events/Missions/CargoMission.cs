@@ -42,6 +42,11 @@ namespace Barotrauma
             }
 
             if (requiredDeliveryAmount == 0) { requiredDeliveryAmount = items.Count; }
+            if (requiredDeliveryAmount > items.Count)
+            {
+                DebugConsole.AddWarning($"Error in mission \"{Prefab.Identifier}\". Required delivery amount is {requiredDeliveryAmount} but there's only {items.Count} items to deliver.");
+                requiredDeliveryAmount = items.Count;
+            }
         }
 
         private void LoadItemAsChild(XElement element, Item parent)
@@ -94,7 +99,11 @@ namespace Barotrauma
                 cargoSpawnPos.Position.X + Rand.Range(-20.0f, 20.0f, Rand.RandSync.Server),
                 cargoRoom.Rect.Y - cargoRoom.Rect.Height + itemPrefab.Size.Y / 2);
 
-            var item = new Item(itemPrefab, position, cargoRoom.Submarine);
+            var item = new Item(itemPrefab, position, cargoRoom.Submarine)
+            {
+                SpawnedInOutpost = true,
+                AllowStealing = false
+            };
             item.FindHull();
             items.Add(item);
 
@@ -115,7 +124,7 @@ namespace Barotrauma
             }
         }
 
-        public override void Start(Level level)
+        protected override void StartMissionSpecific(Level level)
         {
             items.Clear();
             parentInventoryIDs.Clear();
@@ -128,13 +137,17 @@ namespace Barotrauma
 
         public override void End()
         {
-            if (Submarine.MainSub != null && Submarine.MainSub.AtEndPosition)
+            if (Submarine.MainSub != null && Submarine.MainSub.AtEndExit)
             {
                 int deliveredItemCount = items.Count(i => i.CurrentHull != null && !i.Removed && i.Condition > 0.0f);
                 if (deliveredItemCount >= requiredDeliveryAmount)
                 {
                     GiveReward();
                     completed = true;
+                    if (Prefab.LocationTypeChangeOnCompleted != null)
+                    {
+                        ChangeLocationType(Prefab.LocationTypeChangeOnCompleted);
+                    }
                 }
             }
 

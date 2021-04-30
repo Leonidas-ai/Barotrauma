@@ -251,7 +251,7 @@ namespace Barotrauma
         public bool Readonly { get; set; }
 
         public GUITextBox(RectTransform rectT, string text = "", Color? textColor = null, ScalableFont font = null,
-                          Alignment textAlignment = Alignment.Left, bool wrap = false, string style = "", Color? color = null, bool createClearButton = false)
+                          Alignment textAlignment = Alignment.Left, bool wrap = false, string style = "", Color? color = null, bool createClearButton = false, bool createPenIcon = true)
             : base(style, rectT)
         {
             HoverCursor = CursorState.IBeam;
@@ -283,7 +283,7 @@ namespace Barotrauma
                 clearButtonWidth = (int)(clearButton.Rect.Width * 1.2f);
             }
 
-            if (this.style != null && this.style.ChildStyles.ContainsKey("textboxicon"))
+            if (this.style != null && this.style.ChildStyles.ContainsKey("textboxicon") && createPenIcon)
             {
                 icon = new GUIImage(new RectTransform(new Vector2(0.6f, 0.6f), frame.RectTransform, Anchor.CenterRight, scaleBasis: ScaleBasis.BothHeight) { AbsoluteOffset = new Point(5 + clearButtonWidth, 0) }, null, scaleToFit: true);
                 icon.ApplyStyle(this.style.ChildStyles["textboxicon"]);
@@ -457,6 +457,11 @@ namespace Barotrauma
                 isSelecting = PlayerInput.KeyDown(Keys.LeftShift) || PlayerInput.KeyDown(Keys.RightShift);
             }
 
+            if (mouseHeldInside && !PlayerInput.PrimaryMouseButtonHeld())
+            {
+                mouseHeldInside = false;
+            }
+
             if (CaretEnabled)
             {
                 if (textBlock.OverflowClipActive)
@@ -621,6 +626,9 @@ namespace Barotrauma
         {
             if (Text == null) Text = "";
 
+            // Prevent alt gr from triggering any of these as that combination is often needed for special characters
+            if (PlayerInput.IsAltDown()) return;
+
             switch (command)
             {
                 case '\b' when !Readonly: //backspace
@@ -662,7 +670,10 @@ namespace Barotrauma
                     }
                     break;
                 case (char)0x1: // ctrl-a
-                    SelectAll();
+                    if (PlayerInput.IsCtrlDown())
+                    {
+                        SelectAll();
+                    }
                     break;
                 case (char)0x1A when !Readonly && !SubEditorScreen.IsSubEditor(): // ctrl-z
                     text = memento.Undo();

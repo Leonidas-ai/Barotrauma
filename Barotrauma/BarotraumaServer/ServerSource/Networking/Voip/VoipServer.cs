@@ -86,13 +86,16 @@ namespace Barotrauma.Networking
             if (!senderSpectating && recipientSpectating) { return true; }
 
             //sender can't speak
-            if (sender.Character != null && sender.Character.SpeechImpediment >= 100.0f) { return false; }
+            //if (sender.Character != null && sender.Character.SpeechImpediment >= 100.0f) { return false; }
 
             //check if the message can be sent via radio
             if (!sender.VoipQueue.ForceLocal &&
-                ChatMessage.CanUseRadio(sender.Character, out WifiComponent senderRadio) && 
+                ChatMessage.CanUseRadio(sender.Character, out WifiComponent senderRadio) &&
                 ChatMessage.CanUseRadio(recipient.Character, out WifiComponent recipientRadio))
             {
+                //if (recipientRadio.CanReceive(senderRadio)) { return true; }
+                WifiComponent test = senderRadio;
+                test.Range = 2000.0f;
                 if (recipientRadio.CanReceive(senderRadio)) { return true; }
             }
 

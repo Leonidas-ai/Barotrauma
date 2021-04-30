@@ -178,7 +178,7 @@ namespace Barotrauma
                 {
                     if (Timing.TotalTime < GameMain.GameSession.RoundStartTime + 120.0f && 
                         speaker?.CurrentHull != null && 
-                        speaker.TeamID == Character.TeamType.FriendlyNPC && 
+                        (speaker.TeamID == CharacterTeamType.FriendlyNPC || speaker.TeamID == CharacterTeamType.None) && 
                         Character.CharacterList.Any(c => c.TeamID != speaker.TeamID && c.CurrentHull == speaker.CurrentHull)) 
                     {
                         currentFlags.Add("EnterOutpost"); 
@@ -187,6 +187,11 @@ namespace Barotrauma
                 if (GameMain.GameSession.EventManager.CurrentIntensity <= 0.2f)
                 {
                     currentFlags.Add("Casual");
+                }
+
+                if (GameMain.GameSession.IsCurrentLocationRadiated())
+                {
+                    currentFlags.Add("InRadiation");
                 }
             }
 
@@ -213,13 +218,26 @@ namespace Barotrauma
                     }
                 }
 
-                if (speaker.TeamID == Character.TeamType.FriendlyNPC && speaker.Submarine != null && speaker.Submarine.Info.IsOutpost)
+                if (speaker.TeamID == CharacterTeamType.FriendlyNPC && speaker.Submarine != null && speaker.Submarine.Info.IsOutpost)
                 {
                     currentFlags.Add("OutpostNPC");
                 }
                 if (speaker.CampaignInteractionType != CampaignMode.InteractionType.None)
                 {
                     currentFlags.Add("CampaignNPC." + speaker.CampaignInteractionType);
+                }
+
+                if (GameMain.GameSession?.GameMode is CampaignMode campaignMode && 
+                    (campaignMode.Map?.CurrentLocation?.Type?.Identifier.Equals("abandoned", StringComparison.OrdinalIgnoreCase) ?? false))
+                {
+                    if (speaker.TeamID == CharacterTeamType.None)
+                    {
+                        currentFlags.Add("Bandit");
+                    }
+                    else if (speaker.TeamID == CharacterTeamType.FriendlyNPC)
+                    {
+                        currentFlags.Add("Hostage");
+                    }
                 }
             }
 

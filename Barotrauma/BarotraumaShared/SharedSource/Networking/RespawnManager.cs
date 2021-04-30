@@ -24,7 +24,7 @@ namespace Barotrauma.Networking
 
         //items created during respawn
         //any respawn items left in the shuttle are removed when the shuttle despawns
-        private List<Item> respawnItems = new List<Item>();
+        private readonly List<Item> respawnItems = new List<Item>();
 
         public bool UsingShuttle
         {
@@ -55,6 +55,14 @@ namespace Barotrauma.Networking
 
         public State CurrentState { get; private set; }
 
+        public bool UseRespawnPrompt
+        {
+            get
+            {
+                return GameMain.GameSession?.GameMode is CampaignMode && Level.Loaded != null && Level.Loaded?.Type != LevelData.LevelType.Outpost;
+            }
+        }
+
         private float maxTransportTime;
 
         private float updateReturnTimer;
@@ -70,6 +78,8 @@ namespace Barotrauma.Networking
             {
                 RespawnShuttle = new Submarine(shuttleInfo, true);
                 RespawnShuttle.PhysicsBody.FarseerBody.OnCollision += OnShuttleCollision;
+                //set crush depth slightly deeper than the main sub's
+                RespawnShuttle.RealWorldCrushDepth = Math.Max(RespawnShuttle.RealWorldCrushDepth, Submarine.MainSub.RealWorldCrushDepth * 1.2f);
 
                 //prevent wifi components from communicating between the respawn shuttle and other subs
                 List<WifiComponent> wifiComponents = new List<WifiComponent>();
@@ -79,7 +89,7 @@ namespace Barotrauma.Networking
                 }
                 foreach (WifiComponent wifiComponent in wifiComponents)
                 {
-                    wifiComponent.TeamID = Character.TeamType.FriendlyNPC;
+                    wifiComponent.TeamID = CharacterTeamType.FriendlyNPC;
                 }
 
                 ResetShuttle();
@@ -222,7 +232,7 @@ namespace Barotrauma.Networking
 
             foreach (Item item in Item.ItemList)
             {
-                if (item.Submarine != RespawnShuttle) continue;
+                if (item.Submarine != RespawnShuttle) { continue; }
                 
                 //remove respawn items that have been left in the shuttle
                 if (respawnItems.Contains(item))
@@ -238,6 +248,19 @@ namespace Barotrauma.Networking
                 if (powerContainer != null)
                 {
                     powerContainer.Charge = powerContainer.Capacity;
+                }
+
+                var door = item.GetComponent<Door>();
+                if (door != null) { door.Stuck = 0.0f; }
+
+                var steering = item.GetComponent<Steering>();
+                if (steering != null)
+                {
+                    steering.MaintainPos = true;
+                    steering.AutoPilot = true;
+#if SERVER
+                    steering.UnsentChanges = true;
+#endif
                 }
             }
 
@@ -269,9 +292,8 @@ namespace Barotrauma.Networking
                 Spawner.AddToRemoveQueue(c);
                 if (c.Inventory != null)
                 {
-                    foreach (Item item in c.Inventory.Items)
+                    foreach (Item item in c.Inventory.AllItems)
                     {
-                        if (item == null) continue;
                         Spawner.AddToRemoveQueue(item);
                     }
                 }
@@ -281,10 +303,10 @@ namespace Barotrauma.Networking
             RespawnShuttle.Velocity = Vector2.Zero;
         }
 
-        partial void RespawnCharactersProjSpecific();
-        public void RespawnCharacters()
+        partial void RespawnCharactersProjSpecific(Vector2? shuttlePos);
+        public void RespawnCharacters(Vector2? shuttlePos)
         {
-            RespawnCharactersProjSpecific();
+            RespawnCharactersProjSpecific(shuttlePos);
         }
         
         public Vector2 FindSpawnPos()

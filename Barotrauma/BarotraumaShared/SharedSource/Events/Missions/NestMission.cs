@@ -20,7 +20,9 @@ namespace Barotrauma
 
         private readonly float itemSpawnRadius = 800.0f;
         private readonly float approachItemsRadius = 1000.0f;
+        private readonly float nestObjectRadius = 1000.0f;
         private readonly float monsterSpawnRadius = 3000.0f;
+        private readonly int nestObjectAmount = 10;
 
         private readonly bool requireDelivery;
 
@@ -53,6 +55,9 @@ namespace Barotrauma
             approachItemsRadius = prefab.ConfigElement.GetAttributeFloat("approachitemsradius", itemSpawnRadius * 2.0f);
             monsterSpawnRadius = prefab.ConfigElement.GetAttributeFloat("monsterspawnradius", approachItemsRadius * 2.0f);
 
+            nestObjectRadius = prefab.ConfigElement.GetAttributeFloat("nestobjectradius", itemSpawnRadius * 2.0f);
+            nestObjectAmount = prefab.ConfigElement.GetAttributeInt("nestobjectamount", 10);
+
             requireDelivery = prefab.ConfigElement.GetAttributeBool("requiredelivery", false);
 
             string spawnPositionTypeStr = prefab.ConfigElement.GetAttributeString("spawntype", "");
@@ -61,7 +66,6 @@ namespace Barotrauma
             {
                 spawnPositionType = Level.PositionType.Cave | Level.PositionType.Ruin;
             }
-
 
             foreach (var monsterElement in prefab.ConfigElement.GetChildElements("monster"))
             {
@@ -86,7 +90,7 @@ namespace Barotrauma
 
         }
 
-        public override void Start(Level level)
+        protected override void StartMissionSpecific(Level level)
         {
             if (items.Any())
             {
@@ -107,6 +111,25 @@ namespace Barotrauma
                 List<GraphEdge> spawnEdges = new List<GraphEdge>();
                 if (spawnPositionType == Level.PositionType.Cave)
                 {
+                    Level.Cave closestCave = null;
+                    float closestCaveDist = float.PositiveInfinity;
+                    foreach (var cave in Level.Loaded.Caves)
+                    {
+                        float dist = Vector2.DistanceSquared(nestPosition, cave.Area.Center.ToVector2());
+                        if (dist < closestCaveDist)
+                        {
+                            closestCave = cave;
+                            closestCaveDist = dist;
+                        }
+                    }
+                    if (closestCave != null)
+                    {
+                        closestCave.DisplayOnSonar = true;
+                        SpawnNestObjects(level, closestCave);
+#if SERVER
+                        selectedCave = closestCave;
+#endif
+                    }
                     var nearbyCells = Level.Loaded.GetCells(nestPosition, searchDepth: 3);
                     if (nearbyCells.Any())
                     {
@@ -188,6 +211,11 @@ namespace Barotrauma
             }
         }
 
+        private void SpawnNestObjects(Level level, Level.Cave cave)
+        {
+            level.LevelObjectManager.PlaceNestObjects(level, cave, nestPosition, nestObjectRadius, nestObjectAmount);
+        }
+
         public override void Update(float deltaTime)
         {
             if (IsClient)
@@ -242,7 +270,7 @@ namespace Barotrauma
                    
                     break;
                 case 1:
-                    if (!Submarine.MainSub.AtEndPosition && !Submarine.MainSub.AtStartPosition) { return; }
+                    if (!Submarine.MainSub.AtEndExit && !Submarine.MainSub.AtStartExit) { return; }
                     State = 2;
                     break;
             }
@@ -279,6 +307,13 @@ namespace Barotrauma
             {
                 GiveReward();
                 completed = true;
+                if (completed)
+                {
+                    if (Prefab.LocationTypeChangeOnCompleted != null)
+                    {
+                        ChangeLocationType(Prefab.LocationTypeChangeOnCompleted);
+                    }
+                }
             }
             foreach (Item item in items)
             {

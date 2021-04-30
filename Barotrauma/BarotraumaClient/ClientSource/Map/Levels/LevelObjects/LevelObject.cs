@@ -160,17 +160,6 @@ namespace Barotrauma
 
         public void Update(float deltaTime)
         {
-            if (ParticleEmitters != null)
-            {
-                for (int i = 0; i < ParticleEmitters.Length; i++)
-                {
-                    if (ParticleEmitterTriggers[i] != null && !ParticleEmitterTriggers[i].IsTriggered) continue;
-                    Vector2 emitterPos = LocalToWorld(Prefab.EmitterPositions[i]);
-                    ParticleEmitters[i].Emit(deltaTime, emitterPos, hullGuess: null,
-                        angle: ParticleEmitters[i].Prefab.CopyEntityAngle ? Rotation : 0.0f);
-                }
-            }
-
             CurrentRotation = Rotation;
             if (ActivePrefab.SwingFrequency > 0.0f)
             {
@@ -214,6 +203,17 @@ namespace Barotrauma
                 UpdateDeformations(deltaTime);
             }
 
+            if (ParticleEmitters != null)
+            {
+                for (int i = 0; i < ParticleEmitters.Length; i++)
+                {
+                    if (ParticleEmitterTriggers[i] != null && !ParticleEmitterTriggers[i].IsTriggered) { continue; }
+                    Vector2 emitterPos = LocalToWorld(Prefab.EmitterPositions[i]);
+                    ParticleEmitters[i].Emit(deltaTime, emitterPos, hullGuess: null,
+                        angle: ParticleEmitters[i].Prefab.CopyEntityAngle ? -CurrentRotation + MathHelper.PiOver2 : 0.0f);
+                }
+            }
+
             for (int i = 0; i < Sounds.Length; i++)
             {
                 if (Sounds[i] == null) { continue; }
@@ -241,6 +241,7 @@ namespace Barotrauma
 
         private void UpdateDeformations(float deltaTime)
         {
+            if (ActivePrefab.DeformableSprite == null) { return; }
             foreach (SpriteDeformation deformation in spriteDeformations)
             {
                 if (deformation is PositionalDeformation positionalDeformation)

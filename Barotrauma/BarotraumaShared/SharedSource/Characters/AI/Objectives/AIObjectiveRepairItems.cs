@@ -104,7 +104,7 @@ namespace Barotrauma
             }
             bool anyFixers = otherFixers > 0;
             float ratio = anyFixers ? items / (float)otherFixers : 1;
-            if (objectiveManager.CurrentOrder == this)
+            if (objectiveManager.IsOrder(this))
             {
                 return Targets.Sum(t => 100 - t.ConditionPercentage);
             }
@@ -149,10 +149,12 @@ namespace Barotrauma
         {
             if (item == null) { return false; }
             if (item.IgnoreByAI) { return false; }
-            if (item.NonInteractable) { return false; }
+            if (!item.IsInteractable(character)) { return false; }
             if (item.IsFullCondition) { return false; }
             if (item.CurrentHull == null) { return false; }
             if (item.Submarine == null || character.Submarine == null) { return false; }
+            //player crew ignores items in outposts
+            if (character.IsOnPlayerTeam && item.Submarine.Info.IsOutpost) { return false; }
             if (!character.Submarine.IsEntityFoundOnThisSub(item, includingConnectedSubs: true)) { return false; }
             if (item.Repairables.None()) { return false; }
             return true;

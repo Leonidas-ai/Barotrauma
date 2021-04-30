@@ -34,6 +34,10 @@ namespace Barotrauma
         public float ConditionLevel { get; set; } = 1;
         public bool Equip { get; set; }
         public bool RemoveEmpty { get; set; } = true;
+        public bool RemoveExisting { get; set; }
+
+        public bool MoveWholeStack { get; set; }
+
 
         public AIObjectiveContainItem(Character character, Item item, ItemContainer container, AIObjectiveManager objectiveManager, float priorityModifier = 1)
             : base(character, objectiveManager, priorityModifier)
@@ -67,14 +71,14 @@ namespace Barotrauma
             }
             if (item != null)
             {
-                return container.Inventory.Items.Contains(item);
+                return container.Inventory.Contains(item);
             }
             else
             {
                 int containedItemCount = 0;
-                foreach (Item i in container.Inventory.Items)
+                foreach (Item it in container.Inventory.AllItems)
                 {
-                    if (i != null && CheckItem(i))
+                    if (CheckItem(it))
                     {
                         containedItemCount++;
                     }
@@ -83,7 +87,7 @@ namespace Barotrauma
             }
         }
 
-        private bool CheckItem(Item i) => itemIdentifiers.Any(id => i.Prefab.Identifier == id || i.HasTag(id)) && i.ConditionPercentage >= ConditionLevel;
+        private bool CheckItem(Item i) => itemIdentifiers.Any(id => i.Prefab.Identifier == id || i.HasTag(id)) && i.ConditionPercentage >= ConditionLevel && !i.IsThisOrAnyContainerIgnoredByAI();
 
         protected override void Act(float deltaTime)
         {
@@ -102,48 +106,38 @@ namespace Barotrauma
                 }
                 if (character.CanInteractWith(container.Item, checkLinked: false))
                 {
-                    if (RemoveEmpty)
+                    if (RemoveExisting)
                     {
-                        foreach (var emptyItem in container.Inventory.Items)
-                        {
-                            if (emptyItem == null) { continue; }
-                            if (emptyItem.Condition <= 0)
-                            {
-                                emptyItem.Drop(character);
-                            }
-                        }
+                        HumanAIController.UnequipContainedItems(container.Item);
                     }
-                    // Contain the item
-                    if (ItemToContain.ParentInventory == character.Inventory)
+                    else if (RemoveEmpty)
                     {
-                        if (!container.Inventory.CanBePut(ItemToContain))
+                        HumanAIController.UnequipEmptyItems(container.Item);
+                    }
+                    Inventory originalInventory = ItemToContain.ParentInventory;
+                    var slots = originalInventory?.FindIndices(ItemToContain);
+                    if (container.Inventory.TryPutItem(ItemToContain, null))
+                    {
+                        if (MoveWholeStack && slots != null)
                         {
-                            Abandon = true;
-                        }
-                        else
-                        {
-                            character.Inventory.RemoveItem(ItemToContain);
-                            if (container.Inventory.TryPutItem(ItemToContain, null))
+                            foreach (int slot in slots)
                             {
-                                IsCompleted = true;
+                                foreach (Item item in originalInventory.GetItemsAt(slot).ToList())
+                                {
+                                    container.Inventory.TryPutItem(item, null);
+                                }
                             }
-                            else
-                            {
-                                ItemToContain.Drop(character);
-                                Abandon = true;
-                            }
+
+                            IsCompleted = true;
                         }
                     }
                     else
                     {
-                        if (container.Combine(ItemToContain, character))
+                        if (ItemToContain.ParentInventory == character.Inventory && character.Submarine == Submarine.MainSub)
                         {
-                            IsCompleted = true;
+                            ItemToContain.Drop(character);
                         }
-                        else
-                        {
-                            Abandon = true;
-                        }
+                        Abandon = true;
                     }
                 }
                 else
@@ -152,7 +146,8 @@ namespace Barotrauma
                     {
                         DialogueIdentifier = "dialogcannotreachtarget",
                         TargetName = container.Item.Name,
-                        abortCondition = () => !ItemToContain.IsOwnedBy(character)
+                        abortCondition = obj => !ItemToContain.IsOwnedBy(character),
+                        SpeakIfFails = !objectiveManager.IsCurrentOrder<AIObjectiveCleanupItems>()
                     },
                     onAbandon: () => Abandon = true,
                     onCompleted: () => RemoveSubObjective(ref goToObjective));

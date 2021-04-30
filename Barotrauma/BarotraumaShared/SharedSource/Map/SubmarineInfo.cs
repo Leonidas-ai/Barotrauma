@@ -95,8 +95,9 @@ namespace Barotrauma
 
         public OutpostModuleInfo OutpostModuleInfo { get; set; }
 
-        public bool IsOutpost => Type == SubmarineType.Outpost;
+        public bool IsOutpost => Type == SubmarineType.Outpost || Type == SubmarineType.OutpostModule;
         public bool IsWreck => Type == SubmarineType.Wreck;
+        public bool IsBeacon => Type == SubmarineType.BeaconStation;
         public bool IsPlayer => Type == SubmarineType.Player;
 
         public bool IsCampaignCompatible => IsPlayer && !HasTag(SubmarineTag.Shuttle) && !HasTag(SubmarineTag.HideInMenus) && SubmarineClass != SubmarineClass.Undefined;
@@ -108,14 +109,22 @@ namespace Barotrauma
             {
                 if (hash == null)
                 {
-                    XDocument doc = OpenFile(FilePath);
-                    StartHashDocTask(doc);
+                    if (hashTask == null)
+                    {
+                        XDocument doc = OpenFile(FilePath);
+                        StartHashDocTask(doc);
+                    }
                     hashTask.Wait();
                     hashTask = null;
                 }
 
                 return hash;
             }
+        }
+
+        public bool CalculatingHash
+        {
+            get { return hashTask != null && !hashTask.IsCompleted; }
         }
 
         public Vector2 Dimensions
@@ -266,7 +275,7 @@ namespace Barotrauma
                 OutpostModuleInfo = new OutpostModuleInfo(original.OutpostModuleInfo);
             }
 #if CLIENT
-            PreviewImage = original.PreviewImage != null ? new Sprite(original.PreviewImage.Texture, null, null) : null;
+            PreviewImage = original.PreviewImage != null ? new Sprite(original.PreviewImage) : null;
 #endif
         }
 
@@ -373,6 +382,10 @@ namespace Barotrauma
 
         public void Dispose()
         {
+#if CLIENT
+            PreviewImage?.Remove();
+            PreviewImage = null;
+#endif
             if (savedSubmarines.Contains(this)) { savedSubmarines.Remove(this); }
         }
 
@@ -451,6 +464,49 @@ namespace Barotrauma
             }
         }
 
+        /// <summary>
+        /// Calculated from <see cref="SubmarineElement"/>. Can be used when the sub hasn't been loaded and we can't access <see cref="Submarine.RealWorldCrushDepth"/>.
+        /// </summary>
+        public float GetRealWorldCrushDepth()
+        {
+            if (SubmarineElement == null) { return Level.DefaultRealWorldCrushDepth; }
+            bool structureCrushDepthsDefined = false;
+            float realWorldCrushDepth = float.PositiveInfinity;
+            foreach (var structureElement in SubmarineElement.GetChildElements("structure"))
+            {
+                string name = structureElement.Attribute("name")?.Value ?? "";
+                string identifier = structureElement.GetAttributeString("identifier", "");
+                var structurePrefab = Structure.FindPrefab(name, identifier);
+                if (structurePrefab == null || !structurePrefab.Body) { continue; }
+                if (!structureCrushDepthsDefined && structureElement.Attribute("crushdepth") != null)
+                {
+                    structureCrushDepthsDefined = true;
+                }
+                float structureCrushDepth = structureElement.GetAttributeFloat("crushdepth", float.PositiveInfinity);
+                realWorldCrushDepth = Math.Min(structureCrushDepth, realWorldCrushDepth);
+            }
+            if (!structureCrushDepthsDefined)
+            {
+                realWorldCrushDepth = Level.DefaultRealWorldCrushDepth;
+            }
+            realWorldCrushDepth *= GetRealWorldCrushDepthMultiplier();
+            return realWorldCrushDepth;
+        }
+
+        /// <summary>
+        /// Based on <see cref="SubmarineClass"/>
+        /// </summary>
+        public float GetRealWorldCrushDepthMultiplier()
+        {
+            if (SubmarineClass == SubmarineClass.DeepDiver)
+            {
+                return 1.2f;
+            }
+            else
+            {
+                return 1.0f;
+            }
+        }
 
         //saving/loading ----------------------------------------------------
         public bool SaveAs(string filePath, System.IO.MemoryStream previewImage = null)
@@ -522,12 +578,13 @@ namespace Barotrauma
 
             for (int i = savedSubmarines.Count - 1; i >= 0; i--)
             {
-                if (File.Exists(savedSubmarines[i].FilePath) &&
-                    savedSubmarines[i].LastModifiedTime == File.GetLastWriteTime(savedSubmarines[i].FilePath) &&
-                    (Path.GetFullPath(Path.GetDirectoryName(savedSubmarines[i].FilePath)) == Path.GetFullPath(SavePath) ||
-                    contentPackageSubs.Any(fp => Path.GetFullPath(fp.Path).CleanUpPath() == Path.GetFullPath(savedSubmarines[i].FilePath).CleanUpPath())))
+                if (File.Exists(savedSubmarines[i].FilePath))
                 {
-                    continue;
+                    bool isDownloadedSub = Path.GetFullPath(Path.GetDirectoryName(savedSubmarines[i].FilePath)) == Path.GetFullPath(SaveUtil.SubmarineDownloadFolder);
+                    bool isInSubmarinesFolder = Path.GetFullPath(Path.GetDirectoryName(savedSubmarines[i].FilePath)) == Path.GetFullPath(SavePath);
+                    bool isInContentPackage = contentPackageSubs.Any(fp => Path.GetFullPath(fp.Path).CleanUpPath() == Path.GetFullPath(savedSubmarines[i].FilePath).CleanUpPath());
+                    if (isDownloadedSub) { continue; }
+                    if (savedSubmarines[i].LastModifiedTime == File.GetLastWriteTime(savedSubmarines[i].FilePath) && (isInSubmarinesFolder || isInContentPackage)) { continue; }
                 }
                 savedSubmarines[i].Dispose();
             }

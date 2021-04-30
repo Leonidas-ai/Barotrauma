@@ -628,6 +628,13 @@ namespace Barotrauma.Networking
             set;
         }
 
+        [Serialize(false, true)]
+        public bool LockAllDefaultWires
+        {
+            get;
+            set;
+        }
+
         [Serialize(true, true)]
         public bool AllowFriendlyFire
         {
@@ -872,6 +879,13 @@ namespace Barotrauma.Networking
             private set;
         }
 
+        [Serialize(true, true)]
+        public bool RadiationEnabled
+        {
+            get;
+            set;
+        }
+
         public void SetPassword(string password)
         {
             if (string.IsNullOrEmpty(password))
@@ -900,7 +914,6 @@ namespace Barotrauma.Networking
         {
             if (!HasPassword) return true;
             byte[] saltedPw = SaltPassword(Encoding.UTF8.GetBytes(password), salt);
-            DebugConsole.NewMessage(ToolBox.ByteArrayToString(input) + " " + ToolBox.ByteArrayToString(saltedPw));
             if (input.Length != saltedPw.Length) return false;
             for (int i = 0; i < input.Length; i++)
             {
