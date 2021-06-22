@@ -378,7 +378,7 @@ namespace Barotrauma.Networking
 
             if (gameStarted)
             {
-                if (respawnManager != null) { respawnManager.Update(deltaTime); }
+                respawnManager?.Update(deltaTime);
 
                 entityEventManager.Update(connectedClients);
 
@@ -406,10 +406,7 @@ namespace Barotrauma.Networking
                     }
                 }
 
-                if (TraitorManager != null)
-                {
-                    TraitorManager.Update(deltaTime);
-                }
+                TraitorManager?.Update(deltaTime);
 
                 if (serverSettings.Voting.VoteRunning)
                 {
@@ -433,7 +430,7 @@ namespace Barotrauma.Networking
                     connectedClients.All(c => c.Character == null || c.Character.IsDead || c.Character.IsIncapacitated);
 
                 bool subAtLevelEnd = false;
-                if (Submarine.MainSub != null && Submarine.MainSubs[1] == null)
+                if (Submarine.MainSub != null && !(GameMain.GameSession.GameMode is PvPMode))
                 {
                     if (Level.Loaded?.EndOutpost != null)
                     {
@@ -480,7 +477,7 @@ namespace Barotrauma.Networking
 #if !DEBUG
                     if (endRoundTimer <= 0.0f)
                     {
-                        SendChatMessage(TextManager.GetWithVariable("CrewDeadNoRespawns", "[time]", "120"), ChatMessageType.Server);
+                        SendChatMessage(TextManager.GetWithVariable("CrewDeadNoRespawns", "[time]", "60"), ChatMessageType.Server);
                     }
                     endRoundDelay = 120.0f;
                     endRoundTimer += deltaTime;
@@ -488,8 +485,10 @@ namespace Barotrauma.Networking
                 }
                 else if (isCrewDead && (GameMain.GameSession?.GameMode is CampaignMode))
                 {
-                    endRoundDelay = 1.0f;
+#if !DEBUG
+                    endRoundDelay = 120.0f;
                     endRoundTimer += deltaTime;
+#endif
                 }
                 else
                 {
@@ -537,7 +536,8 @@ namespace Barotrauma.Networking
                     initiatedStartGame = false;
                 }
             }
-            else if (Screen.Selected == GameMain.NetLobbyScreen && !gameStarted && !initiatedStartGame)
+            else if (Screen.Selected == GameMain.NetLobbyScreen && !gameStarted && !initiatedStartGame && 
+                    (GameMain.NetLobbyScreen.SelectedMode != GameModePreset.MultiPlayerCampaign || GameMain.GameSession?.GameMode is MultiPlayerCampaign))
             {
                 if (serverSettings.AutoRestart)
                 {
@@ -1207,6 +1207,7 @@ namespace Barotrauma.Networking
                 mpCampaign.ServerReadCrew(inc, sender);
             }
         }
+
         private void ReadReadyToSpawnMessage(IReadMessage inc, Client sender)
         {
             sender.SpectateOnly = inc.ReadBoolean() && (serverSettings.AllowSpectating || sender.Connection == OwnerConnection);
@@ -1315,6 +1316,12 @@ namespace Barotrauma.Networking
                         if (gameStarted)
                         {
                             Log("Client \"" + GameServer.ClientLogName(sender) + "\" ended the round.", ServerLog.MessageType.ServerMessage);
+                            if (mpCampaign != null && Level.IsLoadedOutpost)
+                            {
+                                mpCampaign.SaveInventories();
+                                GameMain.GameSession.SubmarineInfo = new SubmarineInfo(GameMain.GameSession.Submarine);
+                                SaveUtil.SaveGame(GameMain.GameSession.SavePath);
+                            }
                             EndGame();                            
                         }
                     }
@@ -1491,7 +1498,6 @@ namespace Barotrauma.Networking
 
             inc.ReadPadBits();
         }
-
 
         private void ClientWrite(Client c)
         {
@@ -1717,7 +1723,7 @@ namespace Barotrauma.Networking
             positionUpdateBytes = outmsg.LengthBytes - positionUpdateBytes;
 
             outmsg.Write((byte)ServerNetObject.END_OF_MESSAGE);
-            /*
+
             if (outmsg.LengthBytes > MsgConstants.MTU)
             {
                 string errorMsg = "Maximum packet size exceeded (" + outmsg.LengthBytes + " > " + MsgConstants.MTU + ")\n";
@@ -1728,7 +1734,7 @@ namespace Barotrauma.Networking
                 DebugConsole.ThrowError(errorMsg);
                 GameAnalyticsManager.AddErrorEventOnce("GameServer.ClientWriteIngame1:PacketSizeExceeded" + outmsg.LengthBytes, GameAnalyticsSDK.Net.EGAErrorSeverity.Error, errorMsg);
             }
-            */
+
             serverPeer.Send(outmsg, c.Connection, DeliveryMethod.Unreliable);
 
             //---------------------------------------------------------------------------
@@ -1749,7 +1755,7 @@ namespace Barotrauma.Networking
                 }
 
                 outmsg.Write((byte)ServerNetObject.END_OF_MESSAGE);
-                /*
+
                 if (outmsg.LengthBytes > MsgConstants.MTU)
                 {
                     string errorMsg = "Maximum packet size exceeded (" + outmsg.LengthBytes + " > " + MsgConstants.MTU + ")\n";
@@ -1768,7 +1774,7 @@ namespace Barotrauma.Networking
                     DebugConsole.ThrowError(errorMsg);
                     GameAnalyticsManager.AddErrorEventOnce("GameServer.ClientWriteIngame2:PacketSizeExceeded" + outmsg.LengthBytes, GameAnalyticsSDK.Net.EGAErrorSeverity.Error, errorMsg);
                 }
-                */
+
                 serverPeer.Send(outmsg, c.Connection, DeliveryMethod.Unreliable);
             }
         }
@@ -1893,6 +1899,7 @@ namespace Barotrauma.Networking
                 }
 
                 outmsg.Write(serverSettings.RadiationEnabled);
+                outmsg.Write((byte)serverSettings.MaxMissionCount);
             }
             else
             {
@@ -1949,7 +1956,6 @@ namespace Barotrauma.Networking
             }
             else
             {
-                /*
                 if (outmsg.LengthBytes > MsgConstants.MTU)
                 {
                     string errorMsg = "Maximum packet size exceeded (" + outmsg.LengthBytes + " > " + MsgConstants.MTU + ")\n";
@@ -1971,7 +1977,7 @@ namespace Barotrauma.Networking
                     DebugConsole.ThrowError(errorMsg);
                     GameAnalyticsManager.AddErrorEventOnce("GameServer.ClientWriteIngame1:ClientWriteLobby" + outmsg.LengthBytes, GameAnalyticsSDK.Net.EGAErrorSeverity.Error, errorMsg);
                 }
-                */
+
                 serverPeer.Send(outmsg, c.Connection, DeliveryMethod.Unreliable);
             }
         }
@@ -2252,10 +2258,6 @@ namespace Barotrauma.Networking
                     {
                         client.CharacterInfo = new CharacterInfo(CharacterPrefab.HumanSpeciesName, client.Name);
                     }
-                    else
-                    {
-                        client.CharacterInfo.ClearCurrentOrders();
-                    }
                     characterInfos.Add(client.CharacterInfo);
                     if (client.CharacterInfo.Job == null || client.CharacterInfo.Job.Prefab != client.AssignedJob.First)
                     {
@@ -2341,7 +2343,8 @@ namespace Barotrauma.Networking
                     else
                     {
                         characterData.SpawnInventoryItems(spawnedCharacter, spawnedCharacter.Inventory);
-                        characterData.ApplyHealthData(spawnedCharacter.Info, spawnedCharacter);
+                        characterData.ApplyHealthData(spawnedCharacter);
+                        characterData.ApplyOrderData(spawnedCharacter);
                         spawnedCharacter.GiveIdCardTags(mainSubWaypoints[i]);
                         characterData.HasSpawned = true;
                     }
@@ -2363,7 +2366,7 @@ namespace Barotrauma.Networking
                 if (hadBots)
                 {
                     //loaded existing bots -> init them
-                    crewManager?.InitRound();
+                    crewManager.InitRound();
                 }
                 else
                 {
@@ -2373,6 +2376,7 @@ namespace Barotrauma.Networking
             }
 
             campaign?.LoadPets();
+            crewManager?.LoadActiveOrders();
 
             foreach (Submarine sub in Submarine.MainSubs)
             {
@@ -2420,9 +2424,11 @@ namespace Barotrauma.Networking
             roundStartTime = DateTime.Now;
 
             CoroutineManager.StartCoroutine(StartMonsters(), "StartMonsters");
-
+           
             yield return CoroutineStatus.Success;
         }
+
+
 
 
 
@@ -2433,28 +2439,68 @@ namespace Barotrauma.Networking
         {
             /*
 
-            string[] survivator = {
-                "DevilFish",
-                "Glowfish",
-                "Glowfishhusk",
-                "GoofyFish",
-                "Hullfish",
-                "Hullfishhusk",
-                "ImpFish",
-                "Irma",
-                "Irmahusk",
-                "MudraptorGray",
-                "PiraFish",
-                "Punkfish",
-                "Punkfishhusk",
-                "RedFish",
-                "SkeletonFish",
-                "Thrasher",
-                "Thrasherhusk",
-                "ToothFish",
-                "VoidFish",
-                "WhiteFish",
+            string[] monsterpack = { "Archimorur", "Bloodsquid", "Bloodsquid", "Husker", "Husker", "Husker", "Minoga", "Minoga", "Minoga", "Minoga" };
+
+            string[] xeno = {
+                "Xeno",
+                "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger",
             };
+
+
+
+         
+
+            string[] xanhusk = {
+                "Carrierleviathan",
+                "Huskbroodemperor",
+                "Endwormre",
+                "Huskbroodmother",
+                "CoelanthRe",
+                "Bomber", "Bomber",
+                "Juggernaut", "Juggernaut",
+                "Huskrioter", "Huskrioter",
+                "Huskslasher", "Huskslasher",
+                "Huskartifactfaraday", "Huskartifactfaraday",
+                "Huskartifactgeneral", "Huskartifactgeneral",
+                "Huskartifactnasonov", "Huskartifactnasonov",
+                "Huskartifactpsychosis", "Huskartifactpsychosis",
+                "Huskartifactskyholder", "Huskartifactskyholder",
+                "Huskartifactthermal", "Huskartifactthermal",
+                "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser", "Paralyser",
+                "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector", "Huskinfector",
+                "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet", "Crawlercrablet",
+                "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet", "Crawlerjumplet",
+                "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet", "Helmetcrablet",
+                "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet", "Helmetjumplet",
+                "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn", "Huskhammerspawn",
+            };
+
+            string[] xancreature = {
+                "Bossmoloch",
+                "Mudbouncer",
+                "Observer",
+                "Voidstalker",
+                "Hydrathresher",
+                "Charybdisre",
+                "Mudspitter", "Mudspitter",
+                "Xanothresher", "Xanothresher",
+                "Immortal", "Immortal",
+                "Faradaycrab", "Faradaycrab",
+                "Nasonov", "Nasonov",
+                "Psychosiscrab", "Psychosiscrab",
+                "Skyholdercrab", "Skyholdercrab",
+                "Thermalcrab", "Thermalcrab",
+                "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger", "Xan_scavenger",
+                "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora", "Bruteflora",
+                "FractalGuardianRe",  "FractalGuardianRe",
+                "FractalGuardianRe2", "FractalGuardianRe2",
+                "FractalGuardianRe3", "FractalGuardianRe3",
+                "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher", "Lionthresher",
+                "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech",
+            };
+
+
+
 
             string[] improved = {
                 "Molochhusk",
@@ -2500,55 +2546,64 @@ namespace Barotrauma.Networking
                 "Legacycrawlerhusk", "Legacycrawlerhusk",
                 "Molochbabyhusk", "Molochbabyhusk",
             };
-
-            string[] xanhusk = {
-                "Huskbroodmother",
-                "CoelanthRe",
-                "Bomber",
-                "Juggernaut",
-                "Huskrioter",
-                "Huskslasher",
-                "Huskartifactfaraday",
-                "Huskartifactgeneral",
-                "Huskartifactnasonov",
-                "Huskartifactpsychosis",
-                "Huskartifactskyholder",
-                "Huskartifactthermal",
-                "Paralyser", "Paralyser",
-                "Huskinfector", "Huskinfector",
-                "Crawlercrablet", "Crawlercrablet",
-                "Crawlerjumplet", "Crawlerjumplet",
-                "Helmetcrablet", "Helmetcrablet",
-                "Helmetjumplet", "Helmetjumplet",
-                "Huskhammerspawn", "Huskhammerspawn",
-            };
-
-            string[] xancreature = {
-                "Xanothresher",
-                "Immortal",
-                "Bruteflora",
-                "Faradaycrab",
-                "Nasonov",
-                "Psychosiscrab",
-                "Skyholdercrab",
-                "Thermalcrab",
-                "Scavenger", "Scavenger",
-                "FractalGuardianRe",  "FractalGuardianRe",
-                "FractalGuardianRe2", "FractalGuardianRe2",
-                "FractalGuardianRe3", "FractalGuardianRe3",
-                "Lionthresher", "Lionthresher",
-                "Voidleech", "Voidleech",
+            string[] extended = {
+                "Epicentrum",
+                "Voidleviathan",
+                "Thalamuscarrier",
+                "Shadowwhale",
+                "Fractaldestroyer", "Fractaldestroyer",
+                "Charybdissmall", "Charybdissmall",
+                "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer", "Stonewanderer",
+                "Paralyticshark", "Paralyticshark", "Paralyticshark", "Paralyticshark", "Paralyticshark", "Paralyticshark","Paralyticshark", "Paralyticshark", "Paralyticshark", "Paralyticshark", "Paralyticshark",
+                "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier", "Turretcarrier",
+                "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel", "Thermaleel",
+                "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab", "Icecrab",
+                "Brainmoss1", "Brainmoss1", "Brainmoss1", "Brainmoss1", "Brainmoss1", "Brainmoss1",
+                "Brainmoss2", "Brainmoss2", "Brainmoss2", "Brainmoss2", "Brainmoss2", "Brainmoss2",
+                "Brainmoss3", "Brainmoss3", "Brainmoss3", "Brainmoss3", "Brainmoss3", "Brainmoss3",
+                "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva",
+                "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva", "Magmalarva",
+                "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm",
+                 "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm", "Magmaworm",
+                "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech",
+                "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech", "Shadowleech",
+                "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp",
+                "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp", "Coralshrimp",
             };
 
 
-            string[][] monsters = {  randos, crawler, mudraptor, mantis, hammerheadspawn, husk, small,
-    aggressive, thresher, baby, spineling, cell, survivator, improved, xanhusk, xancreature };
+            string[] deadspace = {
+                "Dwarfmoon",
+                "EnhancedSlasher", "EnhancedSlasher", "EnhancedSlasher", "EnhancedSlasher", "EnhancedSlasher",
+                "Slasher2", "Slasher2", "Slasher2", "Slasher2", "Slasher2", "Slasher2",
+                "Slasher", "Slasher", "Slasher", "Slasher", "Slasher", "Slasher",
+                "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider", "Humandivider",
+                "Infector", "Infector", "Infector", "Infector", "Infector", "Infector", "Infector", "Infector", "Infector", "Infector",
+                "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler", "Deadcrawler",
+                "Divider", "Divider", "Divider", "Divider", "Divider", "Divider", "Divider", "Divider", "Divider", "Divider", "Divider",
+                "DevilFish",
+                "Glowfish",
+                "Glowfishhusk",
+                "GoofyFish",
+                "Hullfish",
+                "Hullfishhusk",
+                "ImpFish",
+                "Irma",
+                "Irmahusk",
+                "MudraptorGray",
+                "PiraFish",
+                "Punkfish",
+                "Punkfishhusk",
+                "RedFish",
+                "SkeletonFish",
+                "Thrasher",
+                "Thrasherhusk",
+                "ToothFish",
+                "VoidFish",
+                "WhiteFish",
+            };
 
-            string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids", "hammerhead spawn", "husk", "small monsters",
-    "aggressive monsters", "threshers", "baby monsters", "spinelings", "cells", "Improved husk", "Survivator monsters",
-                "XAN husks", "XAN creatures" };
-
-         string[] soma = {
+            string[] soma = {
                 "Viper",
                 "Angler",
                 "Gulper", "Gulper",
@@ -2556,26 +2611,52 @@ namespace Barotrauma.Networking
                 "Scavenger", "Scavenger",  "Scavenger", "Scavenger",
                 "Construct", "Construct", "Construct", "Construct", "Construct", "Construct", "Construct", "Construct", "Construct", "Construct",
                 "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler", "Waucrawler",
+                "DevilFish",
+                "Glowfish",
+                "Glowfishhusk",
+                "GoofyFish",
+                "Hullfish",
+                "Hullfishhusk",
+                "ImpFish",
+                "Irma",
+                "Irmahusk",
+                "MudraptorGray",
+                "PiraFish",
+                "Punkfish",
+                "Punkfishhusk",
+                "RedFish",
+                "SkeletonFish",
+                "Thrasher",
+                "Thrasherhusk",
+                "ToothFish",
+                "VoidFish",
+                "WhiteFish",
             };
 
-                   string[] monsterpack = { "Archimorur", "Bloodsquid", "Bloodsquid", "Husker", "Husker", "Husker", "Minoga", "Minoga", "Minoga", "Minoga" };
-                    string[] xeno = { 
-                "Xeno", 
-                "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger",
+            string[] survivator = {
+                "DevilFish",
+                "Glowfish",
+                "Glowfishhusk",
+                "GoofyFish",
+                "Hullfish",
+                "Hullfishhusk",
+                "ImpFish",
+                "Irma",
+                "Irmahusk",
+                "MudraptorGray",
+                "PiraFish",
+                "Punkfish",
+                "Punkfishhusk",
+                "RedFish",
+                "SkeletonFish",
+                "Thrasher",
+                "Thrasherhusk",
+                "ToothFish",
+                "VoidFish",
+                "WhiteFish",
             };
-
-        string[] extended = { 
-                "Brainmoss1", "Brainmoss2", "Brainmoss3", "Carriernew", "Coralshrimp", "Icecrab", "Magmalarva",
-                 "Magmaworm", "Mantisnew", "Paralyticshark", "Shadowleech", "Stonewanderer", "Thermaleel", "Turretcarrier", };
-string[][] monsters = { randos, crawler, mudraptor, mantis, hammerheadspawn, husk, small,
-    aggressive, thresher, baby, spineling, cell };
-
-string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids", "hammerhead spawn", "husk", "small monsters",
-    "aggressive monsters", "threshers", "baby monsters", "spinelings", "cells" };
-
-     */
-
-
+            
+                              */
             string[] hope = {
                 "nada"
             };
@@ -2622,34 +2703,34 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad",
             "peanut", "peanut", "peanut", "peanut", "peanut", "peanut", "peanut", "peanut", "peanut", "peanut", "peanut",
             "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn",
-        };
+            };
             string[] crawler = {
             "bonethresher",
             "swarmcrawler", "swarmcrawler", "swarmcrawler", "swarmcrawler", "swarmcrawler",
             "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk", "crawlerhusk",
             "crawler", "crawler", "crawler", "crawler", "crawler", "crawler", "crawler", "crawler", "crawler", "crawler",
-        };
+            };
             string[] mudraptor = {
             "mudraptor",
             "mudraptor_unarmored", "mudraptor_unarmored", "mudraptor_unarmored", "mudraptor_unarmored",
             "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling", "mudraptor_hatchling",
-        };
+            };
             string[] mantis = {
             "mantis",
             "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler", "legacycrawler",
-        };
+            };
             string[] hammerheadspawn = {
             "hammerheadgold",
             "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn",
             "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn",
             "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn",
-        };
+            };
             string[] husk = {
             "carrier",
             "humanhusk", "humanhusk", "humanhusk", "humanhusk","humanhusk", "humanhusk", "humanhusk", "humanhusk", "humanhusk", "humanhusk", "humanhusk", "humanhusk","humanhusk", "humanhusk", "humanhusk", "humanhusk",
             "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk", "husk",
             "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk", "legacyhusk",
-        };
+            };
             string[] small = {
             "molochbaby",
             "fractalguardian", "fractalguardian",
@@ -2673,7 +2754,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             "psilotoad", "psilotoad", "psilotoad", "psilotoad", "psilotoad",
             "peanut", "peanut", "peanut", "peanut", "peanut",
             "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn", "hammerheadspawn",
-        };
+            };
             string[] aggressive = {
             "hammerhead_m",
             "hammerhead",
@@ -2696,11 +2777,11 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             "tigerthresher_hatchling", "tigerthresher_hatchling", "tigerthresher_hatchling", "tigerthresher_hatchling", "tigerthresher_hatchling",
             "leucocyte", "leucocyte", "leucocyte", "leucocyte", "leucocyte",
             "terminalcell", "terminalcell", "terminalcell", "terminalcell", "terminalcell",
-        };
+            };
             string[] thresher = {
             "tigerthresher",
             "tigerthresher_hatchling", "tigerthresher_hatchling", "tigerthresher_hatchling", "tigerthresher_hatchling",
-        };
+            };
             string[] baby = {
             "mudraptor_hatchling",
             "crawler_hatchling",
@@ -2710,56 +2791,58 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             "psilotoad",
             "peanut",
             "hammerheadspawn"
-        };
+            };
             string[] spineling = {
             "spineling"
-        };
+            };
             string[] cell = {
             "leucocyte",
             "terminalcell", "terminalcell", "terminalcell", "terminalcell",
-        };
-
-            string[][] monsters = { hope, randos, crawler, mudraptor, mantis, hammerheadspawn, husk, small,
-    aggressive, thresher, baby, spineling, cell
             };
 
-            string[] monsternames = { "hopes and dreams of a lost generation", "random monsters", "crawlers", "mudraptors", "mantids", "hammerhead spawn", "husk", "small monsters",
-    "aggressive monsters", "threshers", "baby monsters", "spinelings", "cells"
+            string[][] monsters = {
+                hope, randos, crawler, mudraptor, mantis, hammerheadspawn, husk, small,
+                aggressive, thresher, baby, spineling, cell, 
+                //survivator, soma, deadspace,
+                // improved, extended, xanhusk, xancreature, xeno,
             };
 
-            int mapTop = (int)(Submarine.MainSub.WorldPosition.Y + Submarine.MainSub.Borders.Height * 0.5);
+            string[] monsternames = {
+                "hopes and dreams of a lost generation", "random monsters", "crawlers", "mudraptors", "mantids",
+                "hammerhead spawn", "husk", "small monsters", "aggressive monsters", "threshers", "baby monsters", "spinelings", "cells",
+                //"Survivator fish", "SOMA monsters", "Deadspace monsters",
+                // "Improved husk", "Extended monsters", "XAN husk", "XAN creatures","Xenomorphs", 
+            };
+
+            float mapTop = (float)(Submarine.MainSub.WorldPosition.Y + Submarine.MainSub.Borders.Height * 0.5);
             int counter = 0;
-            Submarine spawnsub = null;
 
             GameMain.Server.SendChatMessage("Type a command with a semicolon into the chatbox to use it. Available chat commands " +
                 "include: help; suicide; findcoal; findsep; stopspec; startspec;. Try help; to learn more.", ChatMessageType.Error);
 
-            List<Client> oldPlayers = new List<Client>(GameMain.Server.ConnectedClients);
+            List<ulong> oldPlayers = new List<ulong>();
+            foreach (Client c in connectedClients) { oldPlayers.Add(c.SteamID); }
+
             while (gameStarted)
             {
                 yield return new WaitForSeconds(5);
                 counter += 5;
-                if (counter == 120)
-                {
-                    counter = 0;
+                string names = "";
 
-                    string names = "";
-                    CharacterTeamType team = CharacterTeamType.Team1;
-                    Client readyPlayer = GameMain.Server.ConnectedClients.Find(c => (c.Character?.IsDead ?? true) && !c.SpectateOnly && c.InGame && !oldPlayers.Contains(c));
+                if (new int[] { 30, 60 }.Contains(counter))
+                {
+                    Client readyPlayer = connectedClients.Find(c => (c.Character?.IsDead ?? true) && !c.SpectateOnly && c.InGame && !oldPlayers.Contains(c.SteamID));
                     while (readyPlayer != null && gameStarted)
                     {
+                        Submarine respawnsub = Submarine.MainSub;
+                        CharacterTeamType team = CharacterTeamType.Team1;
                         if (Submarine.MainSubs[1] != null)
                         {
-                            int indexsub = rnd.Next(2);
-                            spawnsub = Submarine.MainSubs[indexsub];
-                            team = Submarine.MainSubs[indexsub].TeamID;
+                            int indexrespawn = rnd.Next(2);
+                            respawnsub = Submarine.MainSubs[indexrespawn];
+                            team = Submarine.MainSubs[indexrespawn].TeamID;
                         }
-                        else
-                        {
-                            spawnsub = Submarine.MainSub;
-                            team = Submarine.MainSub.TeamID;
-                        }
-                        WayPoint spawnPoint = WayPoint.GetRandom(SpawnType.Human, null, spawnsub);
+                        WayPoint spawnPoint = WayPoint.GetRandom(SpawnType.Human, null, respawnsub);
                         CharacterInfo characterInfo = new CharacterInfo(CharacterPrefab.HumanSpeciesName, name: readyPlayer.Name, null);
                         Character spawnedCharacter = Character.Create(characterInfo, spawnPoint.WorldPosition, ToolBox.RandomSeed(8));
                         spawnedCharacter.TeamID = team;
@@ -2767,33 +2850,41 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         spawnedCharacter.Info.StartItemsGiven = true;
                         GameMain.Server.SetClientCharacter(readyPlayer, spawnedCharacter);
                         names = names + readyPlayer.Name + ", ";
-                        oldPlayers.Add(readyPlayer);
+                        oldPlayers.Add(readyPlayer.SteamID);
                         yield return new WaitForSeconds(2);
-                        readyPlayer = GameMain.Server.ConnectedClients.Find(c => (c.Character?.IsDead ?? true) && !c.SpectateOnly && c.InGame && !oldPlayers.Contains(c));
+                        readyPlayer = connectedClients.Find(c => (c.Character?.IsDead ?? true) && !c.SpectateOnly && c.InGame && !oldPlayers.Contains(c.SteamID));
                     }
                     if (names != "")
                     {
                         names = names.TrimEnd(',', ' ');
                         GameMain.Server.SendChatMessage(names + " joined the game!", ChatMessageType.Error);
                     }
+                }
 
-                    if (GameMain.Server.ConnectedClients.Any(c => (c.Character?.IsDead ?? true) && c.InGame))
+                if (counter == 90)
+                {
+                    counter = 0;
+
+                    if (connectedClients.Any(c => (c.Character?.IsDead ?? true) && c.InGame))
                     {
                         int rays = 0;
+                        List<Submarine> subs = new List<Submarine> { Submarine.MainSub };
+                        if (Submarine.MainSubs[1] != null) { subs.Add(Submarine.MainSubs[1]); }
+                        List<Submarine> shut = Submarine.Loaded.Where(s => connectedClients.Any(c => (c.Character?.IsHuman ?? true) && (!c.Character?.IsDead ?? true) &&
+                        Vector2.Distance(s.WorldPosition, (c.Character?.WorldPosition ?? Vector2.Zero)) < Submarine.MainSub.Borders.Width)).ToList();
+                        if (shut != null) { subs.AddRange(shut); }
+                        int totalsub = subs.Count();
+
                     START:
+
                         Vector2 spawnpos = new Vector2();
                         Vector2 raya = new Vector2();
                         Vector2 rayb = new Vector2();
                         Vector2 gopos = Vector2.Zero;
-                        if (Submarine.MainSubs[1] != null)
-                        {
-                            int indexsub = rnd.Next(2);
-                            spawnsub = Submarine.MainSubs[indexsub];
-                        }
-                        else
-                        {
-                            spawnsub = Submarine.MainSub;
-                        }
+
+                        int indexsub = rnd.Next(totalsub);
+                        Submarine monstersub = subs[indexsub];
+
                         double rndx = rnd.NextDouble();
                         double rndy = rnd.NextDouble();
                         bool negx = Convert.ToBoolean(rnd.Next(2));
@@ -2802,15 +2893,15 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         int signy = 1;
                         if (negx) { signx = -1; }
                         if (negy) { signy = -1; }
-                        spawnpos.Y = spawnsub.WorldPosition.Y + (float)(Submarine.MainSub.Borders.Height * rndy * signy);
+                        spawnpos.Y = monstersub.WorldPosition.Y + (float)(Submarine.MainSub.Borders.Height * rndy * signy);
                         if (spawnpos.Y > mapTop)
                         {
                             yield return new WaitForSeconds(1);
                             rays += 1;
                             goto START;
                         }
-                        spawnpos.X = spawnsub.WorldPosition.X + (float)(Submarine.MainSub.Borders.Width * rndx * signx);
-                        float angleRadians = GetRadian(spawnpos, spawnsub.WorldPosition);
+                        spawnpos.X = monstersub.WorldPosition.X + (float)(Submarine.MainSub.Borders.Width * rndx * signx);
+                        float angleRadians = GetRadian(spawnpos, monstersub.WorldPosition);
                         float rayy = (float)(200 * Math.Sin(angleRadians));
                         float rayx = (float)(200 * Math.Cos(angleRadians));
                         raya.Y = spawnpos.Y;
@@ -2819,7 +2910,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         rayb.X = spawnpos.X + rayx;
                         Vector2 rayasim = FarseerPhysics.ConvertUnits.ToSimUnits(raya);
                         Vector2 raybsim = FarseerPhysics.ConvertUnits.ToSimUnits(rayb);
-                        int index1 = rnd.Next(monsters.Length);
+                        int index1 = rnd.Next(1, monsters.Length);
                         if (rays < 20)
                         {
                             yield return new WaitForSeconds(1);
@@ -2833,35 +2924,42 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         else
                         {
                             index1 = 0;
-                            gopos = spawnsub.WorldPosition;
+                            gopos = monstersub.WorldPosition;
                         }
 
-                        string dist = (Vector2.Distance(spawnpos, spawnsub.WorldPosition) / 100).ToString("0.00");
+                        string dist = (Vector2.Distance(spawnpos, monstersub.WorldPosition) / 100).ToString("0.00");
                         string dir = GetCard(GetAngle(angleRadians));
                         names = "";
-                        List<Client> readyMonsters = new List<Client>(GameMain.Server.ConnectedClients.Where(c => (c.Character?.IsDead ?? true) && c.InGame));
-                        while (readyMonsters.Any() && gameStarted)
-                        {
-                            yield return new WaitForSeconds(2);
 
+                        List<ulong> doneMonsters = new List<ulong>();
+                        Client readyMonster = connectedClients.Find(c => (c.Character?.IsDead ?? true) && c.InGame && !doneMonsters.Contains(c.SteamID));
+                        while (readyMonster != null && gameStarted)
+                        {
                             if (index1 == 0)
                             {
-                                names = names + readyMonsters[0].Name + ", ";
-                                readyMonsters.RemoveAt(0);
+                                names = names + readyMonster.Name + ", ";
+                                doneMonsters.Add(readyMonster.SteamID);
+                                yield return new WaitForSeconds(2);
+                                readyMonster = connectedClients.Find(c => (c.Character?.IsDead ?? true) && c.InGame && !doneMonsters.Contains(c.SteamID));
                             }
                             else
                             {
                                 int index2 = rnd.Next(monsters[index1].Length);
-                                GameMain.Server.SetClientCharacter(readyMonsters[0], SpawnCreature(monsters[index1][index2], gopos));
+                                GameMain.Server.SetClientCharacter(readyMonster, SpawnCreature(monsters[index1][index2], gopos));
                                 SendDirectChatMessage("You hear something " + dist + " meters away to the " + dir + " direction!",
-                                readyMonsters[0], ChatMessageType.MessageBox);
-                                names = names + readyMonsters[0].Name + ", ";
-                                readyMonsters.RemoveAt(0);
+                                readyMonster, ChatMessageType.MessageBox);
+                                names = names + readyMonster.Name + ", ";
+                                doneMonsters.Add(readyMonster.SteamID);
+                                yield return new WaitForSeconds(2);
+                                readyMonster = connectedClients.Find(c => (c.Character?.IsDead ?? true) && c.InGame && !doneMonsters.Contains(c.SteamID));
                             }
                         }
-                        names = names.TrimEnd(',', ' ');
-                        GameMain.Server.SendChatMessage("The soul's of " + names + " have entered the body of a nearby group of "
-                            + monsternames[index1] + "!", ChatMessageType.Error);
+                        if (names != "")
+                        {
+                            names = names.TrimEnd(',', ' ');
+                            GameMain.Server.SendChatMessage("The soul's of " + names + " have entered the body of a nearby group of "
+                                + monsternames[index1] + "!", ChatMessageType.Error);
+                        }
                     }
                 }
             }
@@ -2982,6 +3080,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
 
 
 
+
         private void SendStartMessage(int seed, string levelSeed, GameSession gameSession, List<Client> clients, bool includesFinalize)
         {
             foreach (Client client in clients)
@@ -3077,6 +3176,8 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             {
                 mission.ServerWriteInitial(msg, client);
             }
+            msg.Write(GameMain.GameSession.CrewManager != null);
+            GameMain.GameSession.CrewManager?.ServerWriteActiveOrders(msg);
         }
 
         public void EndGame(CampaignMode.TransitionType transitionType = CampaignMode.TransitionType.None)
@@ -3499,7 +3600,6 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         break;
 
 
-
                     case "suicide":
                         if (!senderClient.Character.IsDead)
                         {
@@ -3559,7 +3659,8 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                     case "help":
                         if (senderClient.HasPermission(ClientPermissions.Ban))
                         {
-                            SendDirectChatMessage("suicide; -- Kill the player's character. Use if lost or stuck. \n" +
+                            SendDirectChatMessage(
+                            "suicide; -- Kill the player's character. Use if lost or stuck. \n" +
                             "findcoal; -- Get the direction of the coalition submarine. \n" +
                             "findsep; -- Get the direction of the separatist submarine. \n" +
                             "stopspec; -- Leave spectator group and allows becoming a monster \n" +
@@ -3569,6 +3670,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                             "removeop; -- Remove dangerous and unbalanced items \n" +
                             "removesteroid; -- Remove anabolic steroids \n" +
                             "removegrief; -- Remove any easily griefable items \n" +
+                            "removeweld; -- Remove welding fuel so rounds don't take forever \n" +
                             "removefuel; -- Remove all fuel rods to prevent overload \n" +
                             "removebody; -- Remove any ragdolls to reduce lag \n" +
                             "removejunk; -- Remove any loose items to reduce lag \n" +
@@ -3580,7 +3682,8 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         }
                         else
                         {
-                            SendDirectChatMessage("suicide; -- Kill the player's character. Use if lost or stuck. \n" +
+                            SendDirectChatMessage(
+                            "suicide; -- Kill the player's character. Use if lost or stuck. \n" +
                             "findcoal; -- Get the direction of the coalition submarine. \n" +
                             "findsep; -- Get the direction of the separatist submarine. \n" +
                             "stopspec; -- Leave spectator group to possibly spawn as a human \n" +
@@ -3590,7 +3693,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                     case "respawn":
                         if (senderClient.HasPermission(ClientPermissions.Ban))
                         {
-                            List<Client> deadPlayers = new List<Client>(GameMain.Server.ConnectedClients.Where(c => (c.Character?.IsDead ?? true) && c.InGame && !c.SpectateOnly));
+                            List<Client> deadPlayers = connectedClients.Where(c => (c.Character?.IsDead ?? true) && c.InGame && !c.SpectateOnly).ToList();
                             CharacterTeamType team = CharacterTeamType.Team1;
                             Submarine respawnsub = null;
                             if (deadPlayers.Any())
@@ -3679,6 +3782,22 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                             SendDirectChatMessage(count + " griefables removed!!!", senderClient, ChatMessageType.MessageBox);
                         }
                         break;
+                    case "removeweld":
+                        if (senderClient.HasPermission(ClientPermissions.Ban))
+                        {
+                            string[] banned = { "weldingfueltank" };
+                            int count = 0;
+                            foreach (Item itm in Item.ItemList)
+                            {
+                                if (banned.Any(b => b == itm.Prefab.Identifier))
+                                {
+                                    count++;
+                                    Entity.Spawner.AddToRemoveQueue(itm);
+                                }
+                            }
+                            SendDirectChatMessage(count + " welding fuel tanks removed!!!", senderClient, ChatMessageType.MessageBox);
+                        }
+                        break;
                     case "removefuel":
                         if (senderClient.HasPermission(ClientPermissions.Ban))
                         {
@@ -3696,17 +3815,19 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         }
                         break;
                     case "removebody":
-                        int cnt = 0;
-                        foreach (Character chr in Character.CharacterList)
+                        if (senderClient.HasPermission(ClientPermissions.Ban))
                         {
-                            if (chr.IsDead == true)
+                            int count = 0;
+                            foreach (Character chr in Character.CharacterList)
                             {
-                                cnt++;
-                                Entity.Spawner.AddToRemoveQueue(chr);
+                                if (chr.IsDead == true)
+                                {
+                                    count++;
+                                    Entity.Spawner.AddToRemoveQueue(chr);
+                                }
                             }
+                            SendDirectChatMessage(count + " bodies removed!!!", senderClient, ChatMessageType.MessageBox);
                         }
-                        SendDirectChatMessage(cnt + " bodies removed!!!", senderClient, ChatMessageType.MessageBox);
-            
                         break;
                     case "removejunk":
                         if (senderClient.HasPermission(ClientPermissions.Ban))
@@ -3729,13 +3850,13 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                             Character ded;
                             if (Submarine.MainSubs[1] != null)
                             {
-                                ded = Character.CharacterList.Find(chr => chr.IsHuman && chr.IsDead
-                                && Submarine.MainSubs.Any(s => Vector2.Distance(s.WorldPosition, chr.WorldPosition) < Submarine.MainSub.Borders.Width));
+                                ded = Character.CharacterList.Find(chr => chr.IsHuman  && chr.IsDead 
+                                && Submarine.MainSubs.Any(s => Vector2.Distance(s.WorldPosition, chr?.WorldPosition ?? Vector2.Zero) < Submarine.MainSub.Borders.Width));
                             }
                             else
                             {
                                 ded = Character.CharacterList.Find(chr => chr.IsHuman && chr.IsDead
-                                && Vector2.Distance(Submarine.MainSub.WorldPosition, chr.WorldPosition) < Submarine.MainSub.Borders.Width);
+                                && Vector2.Distance(Submarine.MainSub.WorldPosition, chr?.WorldPosition ?? Vector2.Zero) < Submarine.MainSub.Borders.Width);
                             }
                             if (ded != null)
                             {
@@ -3785,6 +3906,8 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                             "Press MMB or R to attack as monster. If you're lost, type suicide; to respawn. Type findcoal; or findsep; to find the enemy sub!", ChatMessageType.Error);
                         }
                         break;
+
+
 
                     case "d":
                     case "dead":
@@ -3911,7 +4034,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                     break;
                 case ChatMessageType.Dead:
                     //character still alive and capable of speaking -> dead chat not allowed
-                    if (senderClient != null && senderCharacter != null && !senderCharacter.IsDead && senderCharacter.SpeechImpediment < 100.0f)
+                    if (senderClient != null && senderCharacter != null && senderCharacter.IsHuman && senderCharacter.SpeechImpediment < 100.0f)
                     {
                         return;
                     }
@@ -3954,7 +4077,7 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
                         break;
                     case ChatMessageType.Dead:
                         //character still alive -> don't send
-                        if (client != senderClient && client.Character != null && !senderCharacter.IsDead) continue;
+                        if (client != senderClient && client.Character != null && !client.Character.IsDead) continue;
                         break;
                     case ChatMessageType.Private:
                         //private msg sent to someone else than this client -> don't send
@@ -4124,7 +4247,6 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             if (voteType != VoteType.PurchaseSub)
             {
                 SubmarineInfo newSub = GameMain.GameSession.SwitchSubmarine(targetSubmarine, deliveryFee);
-                GameMain.GameSession.Campaign.UpgradeManager.RefundResetAndReload(newSub, true);
             }
 
             serverSettings.Voting.StopSubmarineVote(true);
@@ -4164,7 +4286,6 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             serverSettings.SaveClientPermissions();
         }
 
-
         private IEnumerable<object> SendClientPermissionsAfterClientListSynced(Client recipient, Client client)
         {
             DateTime timeOut = DateTime.Now + new TimeSpan(0, 0, 10);
@@ -4180,7 +4301,6 @@ string[] monsternames = { "random monsters", "crawlers", "mudraptors", "mantids"
             SendClientPermissions(recipient, client);
             yield return CoroutineStatus.Success;
         }
-
 
         private void SendClientPermissions(Client recipient, Client client)
         {

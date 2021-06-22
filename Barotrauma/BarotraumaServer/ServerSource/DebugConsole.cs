@@ -1591,8 +1591,57 @@ namespace Barotrauma
                 "teleportsub",
                 (Client client, Vector2 cursorWorldPos, string[] args) =>
                 {
-                    Submarine sub = (args.Length == 0) ? Submarine.Loaded[0] : Submarine.Loaded.Where(s => s.Info.Type ==
-                    SubmarineType.Player).ToList()[Convert.ToInt32(args[0])];
+
+                    int team = Convert.ToInt32(args[0]);
+                    int subnum = Convert.ToInt32(args[1]);
+                    Submarine sub = Submarine.MainSub;
+                    List<Submarine> shut = Submarine.Loaded.Where(s => s.Info.HasTag(SubmarineTag.Shuttle)).ToList();
+                    List<Submarine> other = Submarine.Loaded.ToList();
+                    other.AddRange(shut);
+
+                    if (Submarine.MainSubs[1] != null)
+                    {
+                        Submarine coal = Submarine.MainSubs[0];
+                        Submarine sep = Submarine.MainSubs[1];
+                        int shutcount = shut.Count();
+                        List<Submarine> coalshut = shut.GetRange(0, shutcount / 2);
+                        List<Submarine> sepshut = shut.GetRange(shutcount / 2, shutcount / 2);
+
+                        if (team == 1)
+                        {
+                            if (subnum == 1) { sub = coal; }
+                            else
+                            {
+                                sub = coalshut[subnum - 2];
+                                if (sub.DockedTo.Any()) { sub = null; }
+                            }
+                        }
+                        else if (team == 2)
+                        {
+                            if (subnum == 1) { sub = sep; }
+                            else
+                            {
+                                sub = sepshut[subnum - 2];
+                                if (sub.DockedTo.Any()) { sub = null; }
+                            }
+                        }
+                        else
+                        { sub = other[subnum - 1]; }
+                    }
+                    else
+                    {
+                        if (team == 1)
+                        {
+                            if (subnum == 1) { sub = Submarine.MainSub; }
+                            else
+                            {
+                                sub = shut[subnum - 2];
+                                if (sub.DockedTo.Any()) { sub = null; }
+                            }
+                        }
+                        else
+                        { sub = other[subnum - 1]; }
+                    }
 
                     if (sub == null || Level.Loaded == null) return;
                     if (Level.Loaded.Type == LevelData.LevelType.Outpost)
@@ -1601,15 +1650,15 @@ namespace Barotrauma
                         return;
                     }
 
-                    if (args.Length == 1 || args[1].Equals("cursor", StringComparison.OrdinalIgnoreCase))
+                    if (args.Length == 2 || args[2].Equals("cursor", StringComparison.OrdinalIgnoreCase))
                     {
                         sub.SetPosition(cursorWorldPos);
                     }
-                    else if (args[1].Equals("start", StringComparison.OrdinalIgnoreCase))
+                    else if (args[2].Equals("start", StringComparison.OrdinalIgnoreCase))
                     {
                         sub.SetPosition(Level.Loaded.StartPosition - Vector2.UnitY * sub.Borders.Height);
                     }
-                    else if (args[1].Equals("end", StringComparison.OrdinalIgnoreCase))
+                    else if (args[2].Equals("end", StringComparison.OrdinalIgnoreCase))
                     {
                         sub.SetPosition(Level.Loaded.EndPosition - Vector2.UnitY * sub.Borders.Height);
                     }
@@ -1691,13 +1740,18 @@ namespace Barotrauma
                 "heal",
                 (Client client, Vector2 cursorWorldPos, string[] args) =>
                 {
-                    Character healedCharacter = (args.Length == 0) ? client.Character : FindMatchingCharacter(args);
+                    bool healAll = args.Length > 1 && args[1].Equals("all", StringComparison.OrdinalIgnoreCase);
+                    Character healedCharacter = (args.Length == 0) ? Character.Controlled : FindMatchingCharacter(healAll ? args.Take(args.Length - 1).ToArray() : args);
                     if (healedCharacter != null)
                     {
                         healedCharacter.SetAllDamage(0.0f, 0.0f, 0.0f);
                         healedCharacter.Oxygen = 100.0f;
                         healedCharacter.Bloodloss = 0.0f;
                         healedCharacter.SetStun(0.0f, true);
+                        if (healAll)
+                        {
+                            healedCharacter.CharacterHealth.RemoveAllAfflictions();
+                        }
                     }
                 }
             );
