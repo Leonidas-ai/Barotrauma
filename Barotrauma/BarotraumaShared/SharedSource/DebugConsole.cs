@@ -1861,19 +1861,18 @@ namespace Barotrauma
                 job = JobPrefab.Prefabs[characterLowerCase];
             }
             bool human = job != null || characterLowerCase == CharacterPrefab.HumanSpeciesName;
-
-            if (args.Length > 2)
+            
+            if (args.Length > 1)
             {
-                switch (args[2].ToLowerInvariant())
+                switch (args[1].ToLowerInvariant())
                 {
                     case "inside":
                         spawnPoint = WayPoint.GetRandom(SpawnType.Human, null, Submarine.MainSub);
-                        spawnPosition = spawnPoint.WorldPosition;
                         break;
                     case "outside":
                         spawnPoint = WayPoint.GetRandom(SpawnType.Enemy);
-                        spawnPosition = spawnPoint.WorldPosition;
                         break;
+                    case "near":
                     case "close":
                         float closestDist = -1.0f;
                         foreach (WayPoint wp in WayPoint.WayPointList)
@@ -1889,27 +1888,37 @@ namespace Barotrauma
                             {
                                 spawnPoint = wp;
                                 closestDist = dist;
-                                spawnPosition = spawnPoint.WorldPosition;
                             }
                         }
                         break;
                     case "cursor":
-                        spawnPoint = WayPoint.GetRandom(human ? SpawnType.Human : SpawnType.Enemy);
                         spawnPosition = cursorWorldPos;
                         break;
                     default:
                         spawnPoint = WayPoint.GetRandom(human ? SpawnType.Human : SpawnType.Enemy);
-                        spawnPosition = spawnPoint.WorldPosition;
                         break;
                 }
             }
             else
             {
                 spawnPoint = WayPoint.GetRandom(human ? SpawnType.Human : SpawnType.Enemy);
-                spawnPosition = cursorWorldPos;
             }
 
             if (string.IsNullOrWhiteSpace(args[0])) { return; }
+            CharacterTeamType teamType = Character.Controlled != null ? Character.Controlled.TeamID : CharacterTeamType.Team1;
+            if (args.Length > 2)
+            {
+                try
+                {
+                    teamType = (CharacterTeamType)int.Parse(args[2]);
+                }
+                catch
+                {
+                    DebugConsole.ThrowError($"\"{args[2]}\" is not a valid team id.");
+                }
+            }
+
+            if (spawnPoint != null) { spawnPosition = spawnPoint.WorldPosition; }
 
             if (human)
             {
@@ -1918,24 +1927,9 @@ namespace Barotrauma
                 spawnedCharacter = Character.Create(characterInfo, spawnPosition, ToolBox.RandomSeed(8));
                 if (GameMain.GameSession != null)
                 {
-                    //TODO: a way to select which team to spawn to?
-                    //spawnedCharacter.TeamID = Character.Controlled != null ? Character.Controlled.TeamID : CharacterTeamType.Team1;   
-
-                    if (args[1].Equals("2", StringComparison.OrdinalIgnoreCase))
-                    {
-                        spawnedCharacter.TeamID = Character.Controlled != null ? Character.Controlled.TeamID : CharacterTeamType.Team2;
-                    }
-                    else if (args[1].Equals("0", StringComparison.OrdinalIgnoreCase))
-                    {
-                        spawnedCharacter.TeamID = Character.Controlled != null ? Character.Controlled.TeamID : CharacterTeamType.None;
-                    }
-                    else
-                    {
-                        spawnedCharacter.TeamID = Character.Controlled != null ? Character.Controlled.TeamID : CharacterTeamType.Team1;
-                    }
-
+                    spawnedCharacter.TeamID = teamType;
 #if CLIENT
-                    GameMain.GameSession.CrewManager.AddCharacter(spawnedCharacter);
+                    GameMain.GameSession.CrewManager.AddCharacter(spawnedCharacter);          
 #endif
                 }
                 spawnedCharacter.GiveJobItems(spawnPoint);

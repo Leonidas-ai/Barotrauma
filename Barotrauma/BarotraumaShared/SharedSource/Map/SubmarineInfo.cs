@@ -404,6 +404,8 @@ namespace Barotrauma
             {
                 var vanillaSubs = vanilla.GetFilesOfType(ContentType.Submarine)
                     .Concat(vanilla.GetFilesOfType(ContentType.Wreck))
+                    .Concat(vanilla.GetFilesOfType(ContentType.BeaconStation))
+                    .Concat(vanilla.GetFilesOfType(ContentType.EnemySubmarine))
                     .Concat(vanilla.GetFilesOfType(ContentType.Outpost))
                     .Concat(vanilla.GetFilesOfType(ContentType.OutpostModule));
                 string pathToCompare = FilePath.Replace(@"\", @"/").ToLowerInvariant();
@@ -741,7 +743,10 @@ namespace Barotrauma
                 try
                 {
                     stream.Position = 0;
-                    doc = XDocument.Load(stream); //ToolBox.TryLoadXml(file);
+                    using (var reader = XMLExtensions.CreateReader(stream))
+                    {
+                        doc = XDocument.Load(reader);
+                    }
                     stream.Close();
                     stream.Dispose();
                 }
@@ -758,9 +763,10 @@ namespace Barotrauma
                 try
                 {
                     ToolBox.IsProperFilenameCase(file);
-                    doc = XDocument.Load(file, LoadOptions.SetBaseUri);
+                    using var stream = File.Open(file, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+                    using var reader = XMLExtensions.CreateReader(stream);
+                    doc = XDocument.Load(reader);
                 }
-
                 catch (Exception e)
                 {
                     exception = e;

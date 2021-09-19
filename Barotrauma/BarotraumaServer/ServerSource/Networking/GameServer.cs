@@ -477,7 +477,7 @@ namespace Barotrauma.Networking
 #if !DEBUG
                     if (endRoundTimer <= 0.0f)
                     {
-                        SendChatMessage(TextManager.GetWithVariable("CrewDeadNoRespawns", "[time]", "60"), ChatMessageType.Server);
+                        SendChatMessage(TextManager.GetWithVariable("CrewDeadNoRespawns", "[time]", "120"), ChatMessageType.Server);
                     }
                     endRoundDelay = 120.0f;
                     endRoundTimer += deltaTime;
@@ -2342,7 +2342,15 @@ namespace Barotrauma.Networking
                     }
                     else
                     {
-                        characterData.SpawnInventoryItems(spawnedCharacter, spawnedCharacter.Inventory);
+                        if (!characterData.HasItemData && !characterData.CharacterInfo.StartItemsGiven)
+                        {
+                            //clients who've chosen to spawn with the respawn penalty can have CharacterData without inventory data
+                            spawnedCharacter.GiveJobItems(mainSubWaypoints[i]);
+                        }
+                        else
+                        {
+                            characterData.SpawnInventoryItems(spawnedCharacter, spawnedCharacter.Inventory);
+                        }
                         characterData.ApplyHealthData(spawnedCharacter);
                         characterData.ApplyOrderData(spawnedCharacter);
                         spawnedCharacter.GiveIdCardTags(mainSubWaypoints[i]);
@@ -2424,12 +2432,9 @@ namespace Barotrauma.Networking
             roundStartTime = DateTime.Now;
 
             CoroutineManager.StartCoroutine(StartMonsters(), "StartMonsters");
-           
+
             yield return CoroutineStatus.Success;
         }
-
-
-
 
 
 
@@ -2446,9 +2451,51 @@ namespace Barotrauma.Networking
                 "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger", "Facehugger",
             };
 
-
-
-         
+                        string[] improved = {
+                "Molochhusk",
+                "Watcherhusk",
+                "Bonethresherhusk",
+                "Coelanthhusk",
+                "Hammerheadgoldhusk",
+                "Hammerheadhusk",
+                "Hammerheadmatriarchhusk",
+                "Huskmutantbonethresher",
+                "Huskmutantcocoonbonethresher",
+                "Huskmutantcocooncrawler",
+                "Huskmutantarmored",
+                "Huskmutanthunter",
+                "Humanshambler",
+                "Huskmutantmudraptor",
+                "Mantishusk",
+                "Mudraptor_hatchlinghusk",
+                "Mudraptor_unarmoredhusk",
+                "Mudraptorhusk",
+                "Swarmcrawlerhusk",  "Swarmcrawlerhusk",
+                "Orangeboyhusk", "Orangeboyhusk",
+                "Peanuthusk", "Peanuthusk",
+                "Psilotoadhusk", "Psilotoadhusk",
+                "Spinelinghusk", "Spinelinghusk",
+                "Tigerthresher_hatchlinghusk", "Tigerthresher_hatchlinghusk",
+                "Tigerthresherhusk", "Tigerthresherhusk",
+                "Crawler_hatchlinghusk", "Crawler_hatchlinghusk",
+                "Crawlerhusk", "Crawlerhusk",
+                "Hammerheadspawnhusk", "Hammerheadspawnhusk",
+                "Humanhusk", "Humanhusk",
+                "Humanhuskabyssdiver", "Humanhuskabyssdiver",
+                "Humanhuskcombatdiver", "Humanhuskcombatdiver",
+                "humanhuskold", "humanhuskold",
+                "Huskabyssold", "Huskabyssold",
+                "Huskcombatold", "Huskcombatold",
+                "Huskmutantcrawler",  "Huskmutantcrawler",
+                "Huskmutanthuman", "Huskmutanthuman",
+                "Huskmutanthumantorso", "Huskmutanthumantorso",
+                "Huskmutanthumantorso", "Huskmutanthumantorso",
+                "Huskmutanttigerthresher", "Huskmutanttigerthresher",
+                "Huskold", "Huskold",
+                "Legacycrawlerhusk", "Legacycrawlerhusk",
+                "Molochbabyhusk", "Molochbabyhusk",
+            };
+    
 
             string[] xanhusk = {
                 "Carrierleviathan",
@@ -2499,53 +2546,6 @@ namespace Barotrauma.Networking
                 "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech", "Voidleech",
             };
 
-
-
-
-            string[] improved = {
-                "Molochhusk",
-                "Watcherhusk",
-                "Bonethresherhusk",
-                "Coelanthhusk",
-                "Hammerheadgoldhusk",
-                "Hammerheadhusk",
-                "Hammerheadmatriarchhusk",
-                "Huskmutantbonethresher",
-                "Huskmutantcocoonbonethresher",
-                "Huskmutantcocooncrawler",
-                "Huskmutantarmored",
-                "Huskmutanthunter",
-                "Humanshambler",
-                "Huskmutantmudraptor",
-                "Mantishusk",
-                "Mudraptor_hatchlinghusk",
-                "Mudraptor_unarmoredhusk",
-                "Mudraptorhusk",
-                "Swarmcrawlerhusk",  "Swarmcrawlerhusk",
-                "Orangeboyhusk", "Orangeboyhusk",
-                "Peanuthusk", "Peanuthusk",
-                "Psilotoadhusk", "Psilotoadhusk",
-                "Spinelinghusk", "Spinelinghusk",
-                "Tigerthresher_hatchlinghusk", "Tigerthresher_hatchlinghusk",
-                "Tigerthresherhusk", "Tigerthresherhusk",
-                "Crawler_hatchlinghusk", "Crawler_hatchlinghusk",
-                "Crawlerhusk", "Crawlerhusk",
-                "Hammerheadspawnhusk", "Hammerheadspawnhusk",
-                "Humanhusk", "Humanhusk",
-                "Humanhuskabyssdiver", "Humanhuskabyssdiver",
-                "Humanhuskcombatdiver", "Humanhuskcombatdiver",
-                "humanhuskold", "humanhuskold",
-                "Huskabyssold", "Huskabyssold",
-                "Huskcombatold", "Huskcombatold",
-                "Huskmutantcrawler",  "Huskmutantcrawler",
-                "Huskmutanthuman", "Huskmutanthuman",
-                "Huskmutanthumantorso", "Huskmutanthumantorso",
-                "Huskmutanthumantorso", "Huskmutanthumantorso",
-                "Huskmutanttigerthresher", "Huskmutanttigerthresher",
-                "Huskold", "Huskold",
-                "Legacycrawlerhusk", "Legacycrawlerhusk",
-                "Molochbabyhusk", "Molochbabyhusk",
-            };
             string[] extended = {
                 "Epicentrum",
                 "Voidleviathan",
@@ -2655,8 +2655,8 @@ namespace Barotrauma.Networking
                 "VoidFish",
                 "WhiteFish",
             };
-            
-                              */
+                     */
+
             string[] hope = {
                 "nada"
             };
@@ -3075,9 +3075,6 @@ namespace Barotrauma.Networking
             string dir = GetCard(angle);
             return dir;
         }
-
-
-
 
 
 
@@ -3600,6 +3597,7 @@ namespace Barotrauma.Networking
                         break;
 
 
+
                     case "suicide":
                         if (!senderClient.Character.IsDead)
                         {
@@ -3850,7 +3848,7 @@ namespace Barotrauma.Networking
                             Character ded;
                             if (Submarine.MainSubs[1] != null)
                             {
-                                ded = Character.CharacterList.Find(chr => chr.IsHuman  && chr.IsDead 
+                                ded = Character.CharacterList.Find(chr => chr.IsHuman && chr.IsDead
                                 && Submarine.MainSubs.Any(s => Vector2.Distance(s.WorldPosition, chr?.WorldPosition ?? Vector2.Zero) < Submarine.MainSub.Borders.Width));
                             }
                             else
@@ -3906,7 +3904,6 @@ namespace Barotrauma.Networking
                             "Press MMB or R to attack as monster. If you're lost, type suicide; to respawn. Type findcoal; or findsep; to find the enemy sub!", ChatMessageType.Error);
                         }
                         break;
-
 
 
                     case "d":
@@ -4024,16 +4021,11 @@ namespace Barotrauma.Networking
                 case ChatMessageType.Radio:
                 case ChatMessageType.Order:
                     if (senderCharacter == null) { return; }
-
-                    //return if senderCharacter doesn't have a working radio
-                    var radio = senderCharacter.Inventory?.AllItems.FirstOrDefault(i => i.GetComponent<WifiComponent>() != null);
-                    if (radio == null || !senderCharacter.HasEquippedItem(radio)) { return; }
-
-                    senderRadio = radio.GetComponent<WifiComponent>();
-                    if (!senderRadio.CanTransmit()) { return; }
+                    if (!ChatMessage.CanUseRadio(senderCharacter, out senderRadio)) { return; }
                     break;
                 case ChatMessageType.Dead:
                     //character still alive and capable of speaking -> dead chat not allowed
+                    //if (senderClient != null && senderCharacter != null && !senderCharacter.IsDead && senderCharacter.SpeechImpediment < 100.0f)
                     if (senderClient != null && senderCharacter != null && senderCharacter.IsHuman && senderCharacter.SpeechImpediment < 100.0f)
                     {
                         return;
