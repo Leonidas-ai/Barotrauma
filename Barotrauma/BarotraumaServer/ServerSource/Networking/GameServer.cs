@@ -4025,8 +4025,8 @@ namespace Barotrauma.Networking
                     break;
                 case ChatMessageType.Dead:
                     //character still alive and capable of speaking -> dead chat not allowed
-                    //if (senderClient != null && senderCharacter != null && !senderCharacter.IsDead && senderCharacter.SpeechImpediment < 100.0f)
-                    if (senderClient != null && senderCharacter != null && senderCharacter.IsHuman && senderCharacter.SpeechImpediment < 100.0f)
+                    if (senderClient != null && senderCharacter != null && !senderCharacter.IsDead && senderCharacter.SpeechImpediment < 100.0f)
+                    //if (senderClient != null && senderCharacter != null && senderCharacter.IsHuman && senderCharacter.SpeechImpediment < 100.0f)
                     {
                         return;
                     }
